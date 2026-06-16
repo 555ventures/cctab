@@ -72,6 +72,42 @@ it** (`cwd_in_scope(session_cwd, scope)`), so launching in a project folds in it
 the launch cwd to `scan_daily(cwd=…)`; the data-layer global path (`scope=None`) is retained for
 tests and library callers but is no longer reachable from the TUI.
 
+## transcript discovery (`_iter_files`)
+
+Transcripts are **not** "one `*.jsonl` per session at one level". Claude Code also writes
+**nested** subagent/workflow transcripts at depth ≥3 — `<encoded-cwd>/<session>/subagents/…`,
+and deeper `subagents/workflows/wf_*/agent-*.jsonl` — each carrying its own internal `cwd`. On a
+real corpus 59 % of all token usage lived at depth ≥3, so a one-level glob silently dropped most
+delegated (subagent/workflow) usage. Discovery is therefore **recursive and deterministic**:
+`_iter_files(projects_dir)` yields every `*.jsonl` at any depth via `rglob("*.jsonl")`, **sorted
+by path string** (the sort makes first-occurrence-wins dedup reproducible run-to-run). Nested
+transcripts are first-class and attributed by **their own internal `cwd`**, so `cwd_in_scope`
+folds workflow/subagent usage into the launch directory exactly like top-level sessions; no
+attribution change was needed. `scan_daily` resolves a file's scope cheaply via `_first_cwd(path)`
+(first line's `cwd`, falling back to `path.parent.name`) and **skips out-of-scope files entirely
+before they can consume a dedup id** (see below). Non-transcript nested files (`journal.jsonl`,
+etc.) carry no `message.usage`, so they parse to empty Sessions — harmless under best-effort
+parsing. Discovery grew from ~559 to ~2,857 files on a real corpus; the existing
+`progress(done, total)` callback already covers the larger count.
+
+## per-message dedup (`seen_ids`)
+
+A single assistant message is written as **multiple JSONL lines sharing one `message.id`**, each
+repeating the *identical* `message.usage` block (one line per content block) — and resumed
+sessions re-log prior messages **across files** too. Counting every line over-counts ~2.5×. cctab
+counts each `message.id` **once per scan run** (a `seen_ids: set[str]` threaded through
+`_parse_file`): the first occurrence in deterministic path-then-line order is counted, later
+occurrences contribute nothing (differing-usage ids — ~2.6 %, minor cache-read deltas — take the
+first occurrence, not a max). A line **lacking** a string `message.id` is always counted and never
+merged (legacy/synthetic transcripts). `_parse_file(path, seen_ids=None)` defaults to a fresh
+per-call set (per-file dedup) for standalone/library use; `scan` threads **one** set across all
+files. `scan_daily(cwd=X)` must scope-filter **before** a file consumes an id — a global set
+marked while parsing *every* file would let an out-of-scope duplicate suppress the in-scope
+occurrence — so it skips out-of-scope files without touching `seen_ids`, making the in-scope
+result independent of file order. This per-message dedup plus full nested discovery is what makes
+token totals — and therefore `EST $` and `CLIENT $` — a defensible billing basis rather than a
+~2.5× over-count.
+
 ## single-screen structure (Textual `MODES`)
 
 `CCTab` is the **daily view only**, always scoped to the launch directory. `MODES = {"daily":
