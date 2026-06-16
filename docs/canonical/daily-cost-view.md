@@ -93,8 +93,16 @@ are added keyed by `d.day` with a leftmost 2-wide `mark` column showing `●` fo
 `space` (`action_toggle_select`) toggles the cursor row's day (`app.days[table.cursor_row].day`);
 `refresh_daily` prunes `selected` to present days first, so a day gone after a rescan never rides
 into a bill. `y` (`action_copy_csv`) copies the marked days — or the whole visible table when none
-are marked — to the system clipboard via `App.copy_to_clipboard`, confirmed with a transient
-`App.notify` toast (never clobbering the summary). Serialization is the pure module-level
+are marked — to the system clipboard, confirmed with a transient `App.notify` toast (never
+clobbering the summary). Copy uses **two paths**: Textual's `App.copy_to_clipboard` (an OSC 52
+escape sequence) **and** a best-effort native write via `system_clipboard_copy` — many terminals
+(Terminal.app, tmux without `set-clipboard on`) silently drop OSC 52, so the keypress would
+otherwise appear to work while the clipboard stays empty. `system_clipboard_copy` shells out to
+the platform clipboard tool (`pbcopy` on darwin, `clip` on win32, `wl-copy`/`xclip`/`xsel` on
+others), best-effort: a missing tool, non-zero exit, or `OSError` returns `False` and the toast
+reads "sent … to terminal clipboard — paste to check" instead of "copied". It never raises and
+never writes to stdout (the TUI owns the screen). This subprocess call and the `.cctop` write are
+cctop's **only** two surfaces that aren't read-only. Serialization is the pure module-level
 `daily_csv(days) -> str` in `app.py` (stdlib `csv`): a header, one raw row per day
 (`day`, per-`FAMILIES` `<fam>_tokens`/`<fam>_cost`, `est_usd`, `client_usd`), and a `TOTAL` row —
 tokens as integers, dollars as 2-decimal floats, no `$` or `human()` abbreviation, so every

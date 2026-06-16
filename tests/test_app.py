@@ -276,6 +276,31 @@ def test_daily_csv_raw_numbers_and_missing_family(monkeypatch) -> None:
     assert cols[7] == "0" and cols[8] == "0.00"   # fable missing → 0 / 0.00
 
 
+def test_system_clipboard_copy_best_effort(monkeypatch) -> None:
+    """AC-CSV-4: system_clipboard_copy returns False (never raises) when no tool exists."""
+    from cctop.app import system_clipboard_copy
+
+    # No clipboard binary resolvable → must degrade to False, not raise.
+    monkeypatch.setattr("cctop.app.shutil.which", lambda name: None)
+    assert system_clipboard_copy("day,est_usd\nTOTAL,1.00\n") is False
+
+    # A resolvable tool that exits non-zero also yields False (best-effort).
+    monkeypatch.setattr("cctop.app.shutil.which", lambda name: "/usr/bin/" + name)
+
+    class _Proc:
+        returncode = 1
+
+    monkeypatch.setattr("cctop.app.subprocess.run", lambda *a, **k: _Proc())
+    assert system_clipboard_copy("x") is False
+
+    # A clean exit yields True.
+    class _OK:
+        returncode = 0
+
+    monkeypatch.setattr("cctop.app.subprocess.run", lambda *a, **k: _OK())
+    assert system_clipboard_copy("x") is True
+
+
 def _drive_days(monkeypatch, days):
     """Mount CCTop with app.days forced to `days` via a stubbed scan_daily."""
     monkeypatch.setattr("cctop.app.scan_daily", lambda *a, **k: days)
@@ -336,6 +361,9 @@ def test_copy_csv_marked_vs_all(monkeypatch) -> None:
 
             clip = MagicMock()
             monkeypatch.setattr(app, "copy_to_clipboard", clip)
+            # Stub the native clipboard fallback so the test never shells out to pbcopy
+            # (which would clobber the developer's real clipboard).
+            monkeypatch.setattr("cctop.app.system_clipboard_copy", lambda text: True)
 
             # Nothing marked → copies all visible days.
             await pilot.press("y")

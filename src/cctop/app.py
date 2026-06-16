@@ -6,6 +6,9 @@ import csv
 import io
 import math
 import os
+import shutil
+import subprocess
+import sys
 
 from rich.text import Text
 from textual import work
@@ -72,6 +75,44 @@ def model_cell(usage: object | None, family: str) -> Text:
         return Text("", style="dim", justify="right")
     s = f"${dollars:,.2f}({human(tokens)})"
     return Text(s, style="grey70", justify="right")
+
+
+def system_clipboard_copy(text: str) -> bool:
+    """Best-effort copy to the OS clipboard via a platform CLI. Returns True on success.
+
+    cctop's other clipboard path is OSC 52 (``App.copy_to_clipboard``), which many
+    terminals silently drop (Terminal.app has no OSC 52 support; tmux blocks it without
+    ``set-clipboard on``), so the keypress appears to work but nothing reaches the
+    clipboard. As a fallback we shell out to the platform clipboard tool. Best-effort:
+    any failure (tool missing, non-zero exit, OSError) returns False and the caller keeps
+    the OSC 52 path. Never raises, never writes to stdout (the TUI owns the screen).
+    """
+    if sys.platform == "darwin":
+        candidates = [["pbcopy"]]
+    elif sys.platform == "win32":
+        candidates = [["clip"]]
+    else:
+        candidates = [
+            ["wl-copy"],
+            ["xclip", "-selection", "clipboard"],
+            ["xsel", "--clipboard", "--input"],
+        ]
+    for cmd in candidates:
+        if shutil.which(cmd[0]) is None:
+            continue
+        try:
+            proc = subprocess.run(
+                cmd,
+                input=text.encode("utf-8"),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError:
+            continue
+        if proc.returncode == 0:
+            return True
+    return False
 
 
 def daily_csv(days: list[DayUsage]) -> str:
@@ -293,8 +334,15 @@ class DailyScreen(Screen):
         else:
             rows = list(app.days)
         text = daily_csv(rows)
+        # OSC 52 path (works in terminals that support it), plus a best-effort native
+        # clipboard write (pbcopy/xclip/clip) since many terminals drop OSC 52.
         self.app.copy_to_clipboard(text)
-        self.app.notify(f"copied {len(rows)} day(s) to clipboard (CSV)", timeout=3)
+        native = system_clipboard_copy(text)
+        if native:
+            msg = f"copied {len(rows)} day(s) to clipboard (CSV)"
+        else:
+            msg = f"sent {len(rows)} day(s) to terminal clipboard (CSV) — paste to check"
+        self.app.notify(msg, timeout=3)
 
 
 # ---------------------------------------------------------------------------

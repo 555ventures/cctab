@@ -59,6 +59,12 @@ The CSV has a header, one row per day with raw per-family token and dollar colum
 `est_usd` / `client_usd`, and a `TOTAL` row — formatted for direct paste into a spreadsheet
 (no `$`, no abbreviated numbers), so every column is `SUM()`-able.
 
+Copy goes to your real OS clipboard via the platform tool (`pbcopy` on macOS, `clip` on
+Windows, `wl-copy`/`xclip`/`xsel` on Linux), with a terminal OSC 52 sequence as a fallback —
+so it works even in terminals (Terminal.app, bare tmux) that don't support OSC 52. If the
+toast says "sent … to terminal clipboard — paste to check", no native tool was found and
+copy fell back to OSC 52 (which your terminal may or may not honor).
+
 ## Cost & rates
 
 `EST $` uses **per-model public list rates** ($/MTok):
