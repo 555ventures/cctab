@@ -1,8 +1,9 @@
 # Canonical: daily-cost-view
 
-Per-model, per-day cost reporting for cctop. Landed by `specs/20260616/01-daily-cost-by-model.md`.
-Cost is **per-model accurate everywhere** — both the daily view and the leaderboard route dollars
-through `cost_of`, never a single blended rate.
+Per-model, per-day cost reporting for cctop. Landed by `specs/20260616/01-daily-cost-by-model.md`;
+narrowed to a single cwd-scoped screen by `specs/20260616/02-cwd-only-daily.md`.
+Cost is **per-model accurate everywhere** — the daily view routes dollars through `cost_of`,
+never a single blended rate.
 
 ## Model-family rate table (`data.py`)
 
@@ -48,17 +49,19 @@ everywhere (per-row cells via `DayUsage.client`, and summary totals), never an i
 
 A session matches a scope when its transcript `cwd` **is the scope directory or nested beneath
 it** (`cwd_in_scope(session_cwd, scope)`), so launching in a project folds in its
-`.claude/worktrees/*` sessions; `scope=None` → global (everything matches). Used by both
-`scan_daily(cwd=…)` and the leaderboard's render-time filter.
+`.claude/worktrees/*` sessions; `scope=None` → global (everything matches). The app always passes
+the launch cwd to `scan_daily(cwd=…)`; the data-layer global path (`scope=None`) is retained for
+tests and library callers but is no longer reachable from the TUI.
 
-## two-view structure (Textual `MODES`)
+## single-screen structure (Textual `MODES`)
 
-`CCTop` is built on Textual **modes**: `MODES = {"daily": DailyScreen, "projects":
-ProjectsScreen}`, `DEFAULT_MODE = "daily"`. `d`/`p` switch views, `g` (`action_toggle_scope`)
-flips cwd↔global for the active view. The launch cwd is captured **once at construction**
-(`self._launch_cwd`) and never re-read on rescans. `--global`/`-g` (parsed by `parse_scope` in
-`app.py:main`) starts in global scope. A **single** threaded `@work` scan pass populates both
-`app.projects` and `app.days`; each screen renders from app state on activation. `DailyScreen` is
-day-rows × family-columns with `$cost(tokens)` cells (via `model_cell`) and `EST $`/`CLIENT $`
-totals; `ProjectsScreen` is the leaderboard moved verbatim, scope-filtered, costed via the
-accurate `Project.cost`.
+`CCTop` is the **daily view only**, always scoped to the launch directory. `MODES = {"daily":
+DailyScreen}` with `DEFAULT_MODE = "daily"` is kept as a single-entry map to preserve Textual's
+auto-mount boot (deleting `MODES` would need a `push_screen`/`SCREENS` restructure). The
+app-level key map is `q` (quit) and `r` (refresh); there is no mode switch, no global-scope
+toggle, no `--global` flag, no leaderboard, and no session drill-down — those surfaces were
+removed in `02`. The launch cwd is captured **once at construction** (`self._launch_cwd`, settable
+via the `CCTop(launch_cwd=…)` param for tests) and never re-read on rescans. A threaded `@work`
+scan pass calls `scan_daily(cwd=self._launch_cwd)` and re-renders `DailyScreen` via `_on_loaded`.
+`DailyScreen` is day-rows × family-columns with `$cost(tokens)` cells (via `model_cell`) and
+`EST $`/`CLIENT $` totals.

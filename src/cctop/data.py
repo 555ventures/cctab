@@ -60,12 +60,12 @@ def _rate(family: str, defaults: ModelRate) -> ModelRate:
 
 
 # "default" family == today's blended rates (keeps RATE_* + existing Usage.cost intact).
-# "fable" is seeded at opus-tier rates as a visible placeholder (A1).
+# "fable" has its own real rates ($10/$50), distinct from Opus ($5/$25) — no longer a placeholder.
 RATES: dict[str, ModelRate] = {
-    "opus":      _rate("OPUS",    ModelRate(15.0, 75.0,  18.75, 1.50)),
+    "opus":      _rate("OPUS",    ModelRate(5.0,  25.0,  6.25,  0.50)),
     "sonnet":    _rate("SONNET",  ModelRate(3.0,  15.0,  3.75,  0.30)),
     "haiku":     _rate("HAIKU",   ModelRate(1.0,  5.0,   1.25,  0.10)),
-    "fable":     _rate("FABLE",   ModelRate(15.0, 75.0,  18.75, 1.50)),
+    "fable":     _rate("FABLE",   ModelRate(10.0, 50.0,  12.50, 1.00)),
     "synthetic": ModelRate(0.0, 0.0, 0.0, 0.0),
     "default":   ModelRate(RATE_INPUT, RATE_OUTPUT, RATE_CACHE_WRITE, RATE_CACHE_READ),
 }
