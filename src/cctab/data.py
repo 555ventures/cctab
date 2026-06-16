@@ -315,7 +315,50 @@ class DayUsage:
 # ---------------------------------------------------------------------------
 
 
-def _parse_file(path: Path) -> Session:
+def _iter_files(projects_dir: Path) -> Iterable[Path]:
+    """Yield every *.jsonl under projects_dir at ANY depth, sorted by path (D2, D3)."""
+    if not projects_dir.is_dir():
+        return
+    yield from sorted(projects_dir.rglob("*.jsonl"), key=lambda p: str(p))
+
+
+def _first_cwd(path: Path) -> str | None:
+    """Best-effort: return the first line's ``cwd`` string, else None.
+
+    Reads only until the first cwd is found (cheap). Never raises
+    (OSError / JSONDecodeError swallowed). Used by scan_daily to scope-filter
+    a file BEFORE its ids are consumed (D6).
+    """
+    try:
+        with path.open("r", errors="ignore") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                cwd_val = obj.get("cwd")
+                if isinstance(cwd_val, str):
+                    return cwd_val
+    except OSError:
+        pass
+    return None
+
+
+def _parse_file(path: Path, seen_ids: set[str] | None = None) -> Session:
+    """Parse one transcript.
+
+    Each message.usage is counted at most once per *seen_ids*: a line whose str
+    message.id is already in seen_ids contributes no usage (D1). seen_ids is
+    mutated in place (new ids added). seen_ids=None → a fresh per-call set
+    (per-file dedup; the standalone/test default). Lines lacking a str
+    message.id are always counted (D4). Best-effort: never raises on malformed
+    input or missing keys.
+    """
+    if seen_ids is None:
+        seen_ids = set()
     usage = Usage(sessions=1)
     cwd: str | None = None
     by_model: dict[str, Usage] = {}
@@ -337,6 +380,13 @@ def _parse_file(path: Path) -> Session:
                 if isinstance(msg, dict):
                     u = msg.get("usage")
                     if isinstance(u, dict):
+                        # Dedup by message.id (D1, D4, D5)
+                        msg_id = msg.get("id")
+                        if isinstance(msg_id, str):
+                            if msg_id in seen_ids:
+                                continue  # already counted — skip (D1, D5)
+                            seen_ids.add(msg_id)
+                        # No str id → always count (D4)
                         line_input = u.get("input_tokens") or 0
                         line_output = u.get("output_tokens") or 0
                         line_cache_create = u.get("cache_creation_input_tokens") or 0
@@ -377,15 +427,6 @@ def _parse_file(path: Path) -> Session:
     )
 
 
-def _iter_files(projects_dir: Path) -> Iterable[Path]:
-    if not projects_dir.is_dir():
-        return
-    for folder in projects_dir.iterdir():
-        if not folder.is_dir():
-            continue
-        yield from folder.glob("*.jsonl")
-
-
 # ---------------------------------------------------------------------------
 # scan() — per-directory leaderboard (unchanged behaviour, gains by_model)
 # ---------------------------------------------------------------------------
@@ -407,8 +448,9 @@ def scan(
     files = list(_iter_files(projects_dir))
     total = len(files)
     by_key: dict[str, Project] = {}
+    seen_ids: set[str] = set()
     for i, path in enumerate(files, start=1):
-        session = _parse_file(path)
+        session = _parse_file(path, seen_ids)
         key = session.cwd if merge_by_cwd else path.parent.name
         proj = by_key.get(key)
         if proj is None:
@@ -455,14 +497,21 @@ def scan_daily(
     # day → family → Usage
     by_day: dict[str, dict[str, Usage]] = {}
 
+    # Global dedup set — only populated for in-scope files (D6).
+    seen_ids: set[str] = set()
+
     for i, path in enumerate(files, start=1):
-        session = _parse_file(path)
-        # Filter by scope when requested — the launch dir AND everything nested
-        # beneath it (worktrees, .claude/agents) fold into the same daily rows.
-        if not cwd_in_scope(session.cwd, cwd):
-            if progress is not None:
-                progress(i, total)
-            continue
+        # Scope-filter BEFORE consuming any ids from this file (D6).
+        # Use _first_cwd for a cheap single-line look-up; fall back to
+        # path.parent.name to match _parse_file's own cwd fallback.
+        if cwd is not None:
+            file_cwd = _first_cwd(path) or path.parent.name
+            if not cwd_in_scope(file_cwd, cwd):
+                if progress is not None:
+                    progress(i, total)
+                continue
+
+        session = _parse_file(path, seen_ids)
         # Merge per-(day, family) usage from the single parse pass
         for day, fam_map in session.by_day_model.items():
             if day not in by_day:

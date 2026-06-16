@@ -32,24 +32,56 @@ def _write_session(folder: Path, name: str, cwd: str, rows: list[dict]) -> None:
     """Write a synthetic JSONL session transcript.
 
     Each dict in *rows* maps to one usage-bearing line.  Optional keys
-    ``"timestamp"`` and ``"model"`` are lifted to the line's top level and
-    ``message.model`` respectively; the remaining keys are treated as usage
-    token counts (``input_tokens`` etc.) and placed under ``message.usage``.
-    Rows omitting those keys behave exactly as before.
+    ``"timestamp"``, ``"model"``, and ``"id"`` are lifted to the line's top
+    level or into ``message.*``: ``timestamp`` goes to the line's top level,
+    ``model`` to ``message.model``, and ``id`` to ``message.id`` (a sibling of
+    ``usage``, NOT a key inside ``usage``).  The remaining keys are treated as
+    usage token counts (``input_tokens`` etc.) and placed under
+    ``message.usage``.  Rows omitting those keys behave exactly as before.
     """
     folder.mkdir(parents=True, exist_ok=True)
     lines = [{"cwd": cwd}]
     for row in rows:
         ts = row.get("timestamp")
         model = row.get("model")
-        usage = {k: v for k, v in row.items() if k not in ("timestamp", "model")}
+        msg_id = row.get("id")
+        usage = {k: v for k, v in row.items() if k not in ("timestamp", "model", "id")}
         entry: dict = {"message": {"usage": usage}}
         if ts is not None:
             entry["timestamp"] = ts
         if model is not None:
             entry["message"]["model"] = model
+        if msg_id is not None:
+            entry["message"]["id"] = msg_id
         lines.append(entry)
     (folder / name).write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+
+
+def _write_nested(projects_dir: Path, rel_subpath: str, cwd: str, rows: list[dict]) -> Path:
+    """Write a synthetic JSONL transcript at a caller-given relative subpath.
+
+    *rel_subpath* is a path relative to *projects_dir*, e.g.
+    ``"enc/session/subagents/agent-x.jsonl"`` for a depth-4 nested transcript.
+    Returns the full Path of the written file.
+    """
+    full_path = projects_dir / rel_subpath
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [{"cwd": cwd}]
+    for row in rows:
+        ts = row.get("timestamp")
+        model = row.get("model")
+        msg_id = row.get("id")
+        usage = {k: v for k, v in row.items() if k not in ("timestamp", "model", "id")}
+        entry: dict = {"message": {"usage": usage}}
+        if ts is not None:
+            entry["timestamp"] = ts
+        if model is not None:
+            entry["message"]["model"] = model
+        if msg_id is not None:
+            entry["message"]["id"] = msg_id
+        lines.append(entry)
+    full_path.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    return full_path
 
 
 def test_usage_total_sums_all_token_classes() -> None:
@@ -395,6 +427,222 @@ def test_write_dir_margin_roundtrip(tmp_path: Path) -> None:
     # No orphaned temp files (.cctab.*.tmp) must remain
     orphans = list(tmp_path.glob(".cctab.*.tmp"))
     assert orphans == [], f"Orphaned temp files found: {orphans}"
+
+
+# ---------------------------------------------------------------------------
+# AC-DEDUP-1..4 — per-message dedup by message.id
+# ---------------------------------------------------------------------------
+
+
+def test_dedup_within_file(tmp_path: Path) -> None:
+    """AC-DEDUP-1: two usage lines sharing message.id in one file are counted once."""
+    root = tmp_path / "projects"
+    # Two lines both carrying message.id "m1" with input_tokens=100 each.
+    # After dedup, the project should have input==100, not input==200.
+    _write_session(
+        root / "enc",
+        "s.jsonl",
+        "/work/proj",
+        [
+            {"id": "m1", "input_tokens": 100},
+            {"id": "m1", "input_tokens": 100},
+        ],
+    )
+    projects = scan(projects_dir=root)
+    assert len(projects) == 1
+    assert projects[0].usage.input == 100
+
+
+def test_dedup_across_files(tmp_path: Path) -> None:
+    """AC-DEDUP-2: same message.id in two different files under the same cwd is counted once."""
+    root = tmp_path / "projects"
+    enc = root / "enc"
+    # Two separate session files, each carrying message.id "m1" with input_tokens=100.
+    # Merged project should have input==100, not input==200.
+    _write_session(enc, "a.jsonl", "/work/proj", [{"id": "m1", "input_tokens": 100}])
+    _write_session(enc, "b.jsonl", "/work/proj", [{"id": "m1", "input_tokens": 100}])
+    projects = scan(merge_by_cwd=True, projects_dir=root)
+    assert len(projects) == 1
+    assert projects[0].usage.input == 100
+
+
+def test_idless_lines_all_counted(tmp_path: Path) -> None:
+    """AC-DEDUP-3: id-less usage lines are all counted even with a global seen_ids set active."""
+    root = tmp_path / "projects"
+    enc = root / "enc"
+    # File a.jsonl: one id-less line (input=100) and one id-bearing line "m1" (input=50).
+    # File b.jsonl: one id-less line (input=100) and the same id "m1" again (input=50).
+    # With dedup: "m1" is counted once → 50 input from it.
+    # The two id-less lines must BOTH be counted → 200 input from them.
+    # Total: 250. Without dedup (current code): 300 (m1 counted twice = 100 + 200 id-less).
+    # The assertion 250 proves both that dedup works AND that id-less lines are not dropped.
+    _write_session(
+        enc,
+        "a.jsonl",
+        "/work/proj",
+        [
+            {"input_tokens": 100},           # id-less
+            {"id": "m1", "input_tokens": 50},  # has id
+        ],
+    )
+    _write_session(
+        enc,
+        "b.jsonl",
+        "/work/proj",
+        [
+            {"input_tokens": 100},           # id-less (must still be counted)
+            {"id": "m1", "input_tokens": 50},  # duplicate id — must be skipped
+        ],
+    )
+    projects = scan(merge_by_cwd=True, projects_dir=root)
+    assert len(projects) == 1
+    # id-less: 100 + 100 = 200; "m1" once: 50 → total 250
+    assert projects[0].usage.input == 250
+
+
+def test_differing_usage_first_wins(tmp_path: Path) -> None:
+    """AC-DEDUP-4: when message.id appears with differing usage, the first path-sorted file wins."""
+    root = tmp_path / "projects"
+    enc = root / "enc"
+    # a.jsonl < b.jsonl in path-sorted order. "m1" in a.jsonl has input_tokens=100;
+    # "m1" in b.jsonl has input_tokens=999. Only a.jsonl's occurrence should be counted.
+    _write_session(enc, "a.jsonl", "/work/proj", [{"id": "m1", "input_tokens": 100}])
+    _write_session(enc, "b.jsonl", "/work/proj", [{"id": "m1", "input_tokens": 999}])
+    projects = scan(merge_by_cwd=True, projects_dir=root)
+    assert len(projects) == 1
+    assert projects[0].usage.input == 100
+
+
+# ---------------------------------------------------------------------------
+# AC-DISCOVER-1..4 — recursive transcript discovery
+# ---------------------------------------------------------------------------
+
+
+def test_nested_subagent_discovered(tmp_path: Path) -> None:
+    """AC-DISCOVER-1: transcript at depth-4 subagents/ path is discovered and attributed."""
+    root = tmp_path / "projects"
+    # Write a nested transcript at <enc>/<session>/subagents/agent-x.jsonl
+    _write_nested(
+        root,
+        "enc/session1/subagents/agent-x.jsonl",
+        "/work/proj",
+        [{"model": "claude-sonnet-4-6", "output_tokens": 50}],
+    )
+
+    # scan(merge_by_cwd=True) must find the nested file and attribute it to /work/proj
+    projects = scan(merge_by_cwd=True, projects_dir=root)
+    assert len(projects) == 1
+    assert projects[0].key == "/work/proj"
+    assert projects[0].usage.output == 50
+
+    # scan_daily(cwd="/work/proj") must also include this usage
+    days = scan_daily(projects_dir=root, cwd="/work/proj")
+    total_output = sum(
+        u.output for day in days for u in day.by_model.values()
+    )
+    assert total_output == 50
+
+
+def test_deep_workflow_transcript_discovered(tmp_path: Path) -> None:
+    """AC-DISCOVER-2: transcript at depth-6 subagents/workflows/wf_1/ is discovered."""
+    root = tmp_path / "projects"
+    # Write at <enc>/<session>/subagents/workflows/wf_1/agent-y.jsonl
+    _write_nested(
+        root,
+        "enc/session1/subagents/workflows/wf_1/agent-y.jsonl",
+        "/work/proj",
+        [{"model": "claude-sonnet-4-6", "output_tokens": 77}],
+    )
+
+    projects = scan(merge_by_cwd=True, projects_dir=root)
+    assert len(projects) == 1
+    assert projects[0].key == "/work/proj"
+    assert projects[0].usage.output == 77
+
+
+def test_out_of_scope_dup_does_not_suppress(tmp_path: Path) -> None:
+    """AC-DISCOVER-3: out-of-scope file must not suppress an in-scope occurrence of the same id."""
+    root = tmp_path / "projects"
+    # In-scope nested transcript for /work/proj
+    _write_nested(
+        root,
+        "enc-proj/session1/subagents/agent-in.jsonl",
+        "/work/proj",
+        [{"id": "m1", "input_tokens": 100}],
+    )
+    # Out-of-scope transcript for /other, also carrying "m1"
+    _write_nested(
+        root,
+        "enc-other/session1/subagents/agent-out.jsonl",
+        "/other",
+        [{"id": "m1", "input_tokens": 100}],
+    )
+
+    # scan_daily(cwd="/work/proj") must count m1 once under /work/proj.
+    # The out-of-scope copy must not suppress it — /work/proj day total must be 100.
+    days = scan_daily(projects_dir=root, cwd="/work/proj")
+    total_input = sum(u.input for day in days for u in day.by_model.values())
+    assert total_input == 100
+
+
+def test_journal_file_harmless(tmp_path: Path) -> None:
+    """AC-DISCOVER-4: nested journal.jsonl with no usage gives zero tokens; no raise."""
+    root = tmp_path / "projects"
+    # Write a nested real transcript with 30 output tokens (this must be discovered).
+    _write_nested(
+        root,
+        "enc/session1/subagents/agent-real.jsonl",
+        "/work/proj",
+        [{"output_tokens": 30}],
+    )
+    # Also write a journal.jsonl at the same nesting level (no message.usage lines).
+    journal = root / "enc" / "session1" / "subagents" / "journal.jsonl"
+    journal.write_text(
+        json.dumps({"cwd": "/work/proj"}) + "\n"
+        + json.dumps({"type": "journal", "content": "some log entry"}) + "\n"
+    )
+
+    # Must not raise. The real transcript's 30 output tokens must be counted.
+    # The journal file contributes zero tokens (no usage lines).
+    # On current code (no recursive discovery) both files are missed → total==0 → FAIL.
+    projects = scan(merge_by_cwd=True, projects_dir=root)
+    assert len(projects) == 1
+    assert projects[0].usage.output == 30
+
+
+# ---------------------------------------------------------------------------
+# AC-ROBUST-1 — best-effort parsing preserved for nested files
+# ---------------------------------------------------------------------------
+
+
+def test_malformed_nested_does_not_raise(tmp_path: Path) -> None:
+    """AC-ROBUST-1: malformed/unreadable nested transcript is skipped without raising."""
+    root = tmp_path / "projects"
+
+    # Case 1: a nested file with a malformed JSON line alongside a valid usage line
+    bad_file = root / "enc" / "session1" / "subagents" / "agent-bad.jsonl"
+    bad_file.parent.mkdir(parents=True, exist_ok=True)
+    bad_file.write_text(
+        json.dumps({"cwd": "/work/proj"}) + "\n"
+        + "NOT VALID JSON {{{\n"
+        + json.dumps({"message": {"usage": {"input_tokens": 42}}}) + "\n"
+    )
+
+    # Case 2: a nested file that is unreadable (permission denied)
+    import os
+    unreadable = root / "enc" / "session2" / "subagents" / "agent-unread.jsonl"
+    unreadable.parent.mkdir(parents=True, exist_ok=True)
+    unreadable.write_text(json.dumps({"cwd": "/work/proj"}) + "\n")
+    os.chmod(unreadable, 0o000)
+
+    try:
+        # Must not raise
+        projects = scan(projects_dir=root)
+        # The valid usage line from the malformed file must still be counted
+        total_input = sum(p.usage.input for p in projects)
+        assert total_input == 42
+    finally:
+        os.chmod(unreadable, 0o644)
 
 
 def test_write_dir_margin_readonly_returns_false(tmp_path: Path) -> None:
