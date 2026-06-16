@@ -8,18 +8,7 @@ usage at public API list rates, applies your client markup, and lets you copy a 
 spreadsheet-ready CSV for invoicing — without leaving the terminal and without sending anything
 anywhere.
 
-```
-┌ cctab ─────────────────────────── Claude Code usage → billable cost ┐
-│ cwd: ~/Projects/wbm-booking · 6 days   4.2M tok   $58.41 est   $87.6…│
-├──┬────────────┬──────────────┬──────────────┬──────────┬───────────┤
-│  │ DAY        │       SONNET │         OPUS │    EST $  │  CLIENT $ │
-├──┼────────────┼──────────────┼──────────────┼──────────┼───────────┤
-│● │ 2026-06-16 │  $4.12(900k) │ $11.80(420k) │  $15.92  │   $23.88  │
-│  │ 2026-06-15 │  $2.01(510k) │  $6.40(210k) │   $8.41  │   $12.62  │
-│● │ 2026-06-14 │  $9.55(2.1M) │       —      │   $9.55  │   $14.33  │
-└──┴────────────┴──────────────┴──────────────┴──────────┴───────────┘
- e edit margin   space mark   y copy CSV   r refresh   q quit
-```
+![cctab — daily per-model cost breakdown for the launch directory](docs/screenshot.png)
 
 ---
 
