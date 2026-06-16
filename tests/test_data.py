@@ -1,7 +1,7 @@
 """Data-layer unit tests: parsing, aggregation, cost math, merge-by-cwd.
 
 AC-IDs are referenced in each test's docstring (the repo convention).
-These exercise the numbers cctop exists to report, against synthetic
+These exercise the numbers cctab exists to report, against synthetic
 transcript dirs built in tmp_path — no dependency on the real ~/.claude.
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from cctop.data import (
+from cctab.data import (
     RATE_INPUT,
     RATE_OUTPUT,
     RATES,
@@ -95,7 +95,7 @@ def test_scan_skips_malformed_lines(tmp_path: Path) -> None:
 
 def test_shorten_collapses_home(monkeypatch) -> None:
     """AC-DATA-5: paths under $HOME render with a leading ~."""
-    import cctop.data as data
+    import cctab.data as data
 
     monkeypatch.setattr(data, "HOME", "/home/me")
     assert shorten("/home/me/Projects/x") == "~/Projects/x"
@@ -139,7 +139,7 @@ def test_cost_of_uses_family_rates() -> None:
 
 def test_client_cost_applies_margin(monkeypatch) -> None:
     """AC-DATA-8: client_cost multiplies by MARGIN; unset MARGIN defaults to 1.0."""
-    import cctop.data as data
+    import cctab.data as data
 
     # With MARGIN=1.5
     monkeypatch.setattr(data, "MARGIN", 1.5)
@@ -318,13 +318,13 @@ def test_project_cost_sums_per_model(tmp_path: Path, monkeypatch) -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-CFG-1..4 — per-directory margin config (.cctop)
+# AC-CFG-1..4 — per-directory margin config (.cctab)
 # ---------------------------------------------------------------------------
 
 
 def test_read_dir_margin_present(tmp_path: Path) -> None:
-    """AC-CFG-1: read_dir_margin returns 2.0 when <D>/.cctop is {"margin": 2.0}."""
-    from cctop.data import DIR_CONFIG_NAME, read_dir_margin
+    """AC-CFG-1: read_dir_margin returns 2.0 when <D>/.cctab is {"margin": 2.0}."""
+    from cctab.data import DIR_CONFIG_NAME, read_dir_margin
 
     cfg = tmp_path / DIR_CONFIG_NAME
     cfg.write_text(json.dumps({"margin": 2.0}))
@@ -335,9 +335,9 @@ def test_read_dir_margin_present(tmp_path: Path) -> None:
 
 def test_read_dir_margin_absent_or_malformed(tmp_path: Path) -> None:
     """AC-CFG-2: read_dir_margin returns None for missing/malformed/out-of-range inputs."""
-    from cctop.data import DIR_CONFIG_NAME, read_dir_margin
+    from cctab.data import DIR_CONFIG_NAME, read_dir_margin
 
-    # Case 1: no .cctop file → None, no raise
+    # Case 1: no .cctab file → None, no raise
     assert read_dir_margin(tmp_path) is None
 
     cfg = tmp_path / DIR_CONFIG_NAME
@@ -372,8 +372,8 @@ def test_read_dir_margin_absent_or_malformed(tmp_path: Path) -> None:
 
 
 def test_write_dir_margin_roundtrip(tmp_path: Path) -> None:
-    """AC-CFG-3: write_dir_margin creates .cctop with correct value; round-trips to 1.5."""
-    from cctop.data import DIR_CONFIG_NAME, read_dir_margin, write_dir_margin
+    """AC-CFG-3: write_dir_margin creates .cctab with correct value; round-trips to 1.5."""
+    from cctab.data import DIR_CONFIG_NAME, read_dir_margin, write_dir_margin
 
     returned = write_dir_margin(tmp_path, 1.5)
 
@@ -392,8 +392,8 @@ def test_write_dir_margin_roundtrip(tmp_path: Path) -> None:
     # round-trip via read_dir_margin
     assert read_dir_margin(tmp_path) == pytest.approx(1.5)
 
-    # No orphaned temp files (.cctop.*.tmp) must remain
-    orphans = list(tmp_path.glob(".cctop.*.tmp"))
+    # No orphaned temp files (.cctab.*.tmp) must remain
+    orphans = list(tmp_path.glob(".cctab.*.tmp"))
     assert orphans == [], f"Orphaned temp files found: {orphans}"
 
 
@@ -401,9 +401,9 @@ def test_write_dir_margin_readonly_returns_false(tmp_path: Path) -> None:
     """AC-CFG-4: write_dir_margin returns False for read-only dir; no raise; no temp file."""
     import os
 
-    from cctop.data import DIR_CONFIG_NAME, write_dir_margin
+    from cctab.data import DIR_CONFIG_NAME, write_dir_margin
 
-    # Create a pre-existing .cctop so we can verify it is left intact
+    # Create a pre-existing .cctab so we can verify it is left intact
     existing_cfg = tmp_path / DIR_CONFIG_NAME
     existing_cfg.write_text(json.dumps({"margin": 9.9}))
 
@@ -418,12 +418,12 @@ def test_write_dir_margin_readonly_returns_false(tmp_path: Path) -> None:
     # Must return False, never raise
     assert result is False
 
-    # The existing .cctop must remain intact (not overwritten or corrupted)
+    # The existing .cctab must remain intact (not overwritten or corrupted)
     assert existing_cfg.exists()
     with existing_cfg.open() as fh:
         intact = json.load(fh)
     assert intact == {"margin": 9.9}
 
     # No orphaned temp files
-    orphans = list(tmp_path.glob(".cctop.*.tmp"))
+    orphans = list(tmp_path.glob(".cctab.*.tmp"))
     assert orphans == [], f"Orphaned temp files found: {orphans}"

@@ -14,8 +14,8 @@
   },
   "routing": {
     "tests": "tests/test_*.py rows",
-    "data": "src/cctop/data.py rows — dataclasses, JSONL parsing, scan/aggregation, cost math, shorten",
-    "tui": "src/cctop/app.py rows — App/Screen widgets, bindings, actions, cell/number rendering"
+    "data": "src/cctab/data.py rows — dataclasses, JSONL parsing, scan/aggregation, cost math, shorten",
+    "tui": "src/cctab/app.py rows — App/Screen widgets, bindings, actions, cell/number rendering"
   },
   "pipelineRules": ".claude/rules/spec-pipeline.md"
 }

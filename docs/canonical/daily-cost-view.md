@@ -1,25 +1,25 @@
 # Canonical: daily-cost-view
 
-Per-model, per-day cost reporting for cctop. Landed by `specs/20260616/01-daily-cost-by-model.md`;
+Per-model, per-day cost reporting for cctab. Landed by `specs/20260616/01-daily-cost-by-model.md`;
 narrowed to a single cwd-scoped screen by `specs/20260616/02-cwd-only-daily.md`.
 Cost is **per-model accurate everywhere** — the daily view routes dollars through `cost_of`,
 never a single blended rate.
 
 ## Model-family rate table (`data.py`)
 
-Rates and the margin are the **only** numeric knobs and live exclusively in `src/cctop/data.py`
+Rates and the margin are the **only** numeric knobs and live exclusively in `src/cctab/data.py`
 (Worker Rule: number/cost discipline — never a `$/MTok` literal elsewhere).
 
 - `RATES: dict[str, ModelRate]` keyed by canonical lowercase family. `ModelRate` is a frozen
   dataclass of `input`/`output`/`cache_write`/`cache_read` `$/MTok` rates.
-- Each class is env-overridable per family via `CCTOP_RATE_<FAMILY>_<CLASS>` (e.g.
-  `CCTOP_RATE_OPUS_INPUT`), resolved by the `_rate()` helper at module load.
+- Each class is env-overridable per family via `CCTAB_RATE_<FAMILY>_<CLASS>` (e.g.
+  `CCTAB_RATE_OPUS_INPUT`), resolved by the `_rate()` helper at module load.
 - Families: `haiku`, `sonnet`, `opus`, `fable` (the displayed columns, in that left→right order
   via the `FAMILIES` tuple), plus two internal families with no column — `synthetic` (priced at
   **$0**) and `default` (unknown models, seeded from the legacy blended `RATE_*` constants so
   `Usage.cost` and AC-DATA-2 stay intact).
 - `fable` is seeded at opus-tier rates as a visible placeholder (no public list price known at
-  plan time); override via `CCTOP_RATE_FABLE_*` or update the seed when known.
+  plan time); override via `CCTAB_RATE_FABLE_*` or update the seed when known.
 
 **Adding a new model family is now T1:** mirror a `RATES` row + add the key to the `FAMILIES`
 column tuple (a new column also needs its `add_column` in `DailyScreen.on_mount`). No spec needed.
@@ -39,7 +39,7 @@ rejected before Python 3.11, and all real transcripts end in `Z`), then `.astime
 **always sorts after** every real day (use the explicit two-list sort — a bare `reverse=True`
 wrongly floats `"unknown"` to the front).
 
-## client margin (`client_cost` / per-directory `.cctop`)
+## client margin (`client_cost` / per-directory `.cctab`)
 
 `CLIENT $ = cost × MARGIN`, a **markup multiplier**, default `1.0` (client == cost).
 `MARGIN` lives in `data.py`; `client_cost(cost)` is the single function that applies it — reuse it
@@ -48,11 +48,11 @@ The active margin **is** the module global `data.MARGIN`; `set_margin(value)` mu
 `globals()["MARGIN"] = value` (a `from`-import rebind would not update the attribute) and
 `current_margin()` reads it back.
 
-### Per-directory margin (`.cctop`)
+### Per-directory margin (`.cctab`)
 
-The client markup is **per-directory**, stored in `<launch dir>/.cctop` as JSON `{"margin":
+The client markup is **per-directory**, stored in `<launch dir>/.cctab` as JSON `{"margin":
 <number>}` (filename constant `DIR_CONFIG_NAME` in `data.py`; only `margin` is read, extra keys
-ignored). cctop reads it on launch with precedence **`.cctop` → `CCTOP_MARGIN` env → `1.0`**, and
+ignored). cctab reads it on launch with precedence **`.cctab` → `CCTAB_MARGIN` env → `1.0`**, and
 writes it when the user edits the margin in-app with `e` on the daily view (`escape` cancels —
 an empty Input with the current margin shown as a placeholder hint). The file is created **only
 on edit** (never just by viewing a directory), read **best-effort** (`read_dir_margin` returns
@@ -60,8 +60,8 @@ on edit** (never just by viewing a directory), read **best-effort** (`read_dir_m
 it falls back silently and never poisons CLIENT $), and written **atomically** (`write_dir_margin`
 uses a same-dir `tempfile` + `os.replace`, swallows `OSError`, cleans up its temp, returns `False`
 on failure — a read-only dir degrades, never crashes; a failed write surfaces `(could not write
-.cctop)` in the summary label). Model `$/MTok` rates remain global in `data.py`'s `RATES`; only
-the margin is per-directory. Suggest adding `.cctop` to `.gitignore`. This is cctop's only disk
+.cctab)` in the summary label). Model `$/MTok` rates remain global in `data.py`'s `RATES`; only
+the margin is per-directory. Suggest adding `.cctab` to `.gitignore`. This is cctab's only disk
 write — every other surface is read-only.
 
 ## cwd scope (`cwd_in_scope`)
@@ -74,13 +74,13 @@ tests and library callers but is no longer reachable from the TUI.
 
 ## single-screen structure (Textual `MODES`)
 
-`CCTop` is the **daily view only**, always scoped to the launch directory. `MODES = {"daily":
+`CCTab` is the **daily view only**, always scoped to the launch directory. `MODES = {"daily":
 DailyScreen}` with `DEFAULT_MODE = "daily"` is kept as a single-entry map to preserve Textual's
 auto-mount boot (deleting `MODES` would need a `push_screen`/`SCREENS` restructure). The
 app-level key map is `q` (quit) and `r` (refresh); there is no mode switch, no global-scope
 toggle, no `--global` flag, no leaderboard, and no session drill-down — those surfaces were
 removed in `02`. The launch cwd is captured **once at construction** (`self._launch_cwd`, settable
-via the `CCTop(launch_cwd=…)` param for tests) and never re-read on rescans. A threaded `@work`
+via the `CCTab(launch_cwd=…)` param for tests) and never re-read on rescans. A threaded `@work`
 scan pass calls `scan_daily(cwd=self._launch_cwd)` and re-renders `DailyScreen` via `_on_loaded`.
 `DailyScreen` is day-rows × family-columns with `$cost(tokens)` cells (via `model_cell`) and
 `EST $`/`CLIENT $` totals.
@@ -101,8 +101,8 @@ otherwise appear to work while the clipboard stays empty. `system_clipboard_copy
 the platform clipboard tool (`pbcopy` on darwin, `clip` on win32, `wl-copy`/`xclip`/`xsel` on
 others), best-effort: a missing tool, non-zero exit, or `OSError` returns `False` and the toast
 reads "sent … to terminal clipboard — paste to check" instead of "copied". It never raises and
-never writes to stdout (the TUI owns the screen). This subprocess call and the `.cctop` write are
-cctop's **only** two surfaces that aren't read-only. Serialization is the pure module-level
+never writes to stdout (the TUI owns the screen). This subprocess call and the `.cctab` write are
+cctab's **only** two surfaces that aren't read-only. Serialization is the pure module-level
 `daily_csv(days) -> str` in `app.py` (stdlib `csv`): a header, one raw row per day
 (`day`, per-`FAMILIES` `<fam>_tokens`/`<fam>_cost`, `est_usd`, `client_usd`), and a `TOTAL` row —
 tokens as integers, dollars as 2-decimal floats, no `$` or `human()` abbreviation, so every

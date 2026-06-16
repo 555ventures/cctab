@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Mechanical shortcut-pattern sweep — deterministic input to /spec:review.
-# Usage: [DIFF_BASE=<ref>] scripts/spec-patterns.sh [dir ...]    (defaults to src/cctop tests)
+# Usage: [DIFF_BASE=<ref>] scripts/spec-patterns.sh [dir ...]    (defaults to src/cctab tests)
 # Pure report: always exits 0. Sanctioned exceptions exist — the reviewer judges; this only counts.
 set -u
 DIRS=("$@")
-[ ${#DIRS[@]} -eq 0 ] && DIRS=(src/cctop tests)
+[ ${#DIRS[@]} -eq 0 ] && DIRS=(src/cctab tests)
 echo "## Mechanical pattern sweep"; echo "Scope: ${DIRS[*]}"; echo
 sweep() {
   local name="$1"; shift
@@ -27,7 +27,7 @@ sweep "Bare or blanket except (prefer specific OSError/JSONDecodeError)" \
 
 # --- layer boundary: data.py must not import the TUI -----------------------
 sweep "data.py importing the TUI layer (one-way dependency violation)" \
-  -e 'import +cctop\.app|from +cctop\.app' -g 'data.py'
+  -e 'import +cctab\.app|from +cctab\.app' -g 'data.py'
 
 # --- number / cost discipline: rates live only in data.py ------------------
 # $/MTok rate literals or per-MTok division outside the data.py rate block.

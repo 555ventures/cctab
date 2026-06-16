@@ -13,14 +13,14 @@ depended_on_by: []
 
 ## Goal
 
-Turn cctop's default screen into a **daily breakdown for the current directory**: one row per
+Turn cctab's default screen into a **daily breakdown for the current directory**: one row per
 day, a column per model family showing `$cost(tokens)`, plus per-day `EST $` (your cost) and
 `CLIENT $` (cost × margin) totals. Launching in a directory shows only that directory's days;
 `--global` widens to all directories. Cost becomes **per-model accurate** (opus, sonnet, fable
 and haiku each priced from their own $/MTok rates) instead of one blended rate, and a
-`CCTOP_MARGIN` markup multiplier yields a client-facing cost column. The existing
-per-directory leaderboard is preserved as a second, switchable view. "Done" = `cctop` opens on
-the cwd daily view, `cctop --global` on the all-dirs daily view, both numbers per-model
+`CCTAB_MARGIN` markup multiplier yields a client-facing cost column. The existing
+per-directory leaderboard is preserved as a second, switchable view. "Done" = `cctab` opens on
+the cwd daily view, `cctab --global` on the all-dirs daily view, both numbers per-model
 accurate, and `p`/`d` switch between daily and the leaderboard.
 
 ## Decisions (locked — workers apply verbatim, never override)
@@ -30,7 +30,7 @@ accurate, and `p`/`d` switch between daily and the leaderboard.
 | D1 | Default view = **daily**, scoped to the launch cwd; `--global` flag widens scope to all directories. | Matches the request ("cost of current dir unless I pass global flag"); rejected keeping the leaderboard as the default. |
 | D2 | Daily layout = one row per **day**; a fixed column per model family (Haiku, Sonnet, Opus, Fable) whose cell renders `$cost(tokens)`; trailing `EST $` and `CLIENT $` are the day's totals across **all** models. | User-confirmed layout; rejected one-row-per-(day,model) and tokens-only cells. |
 | D3 | Per-model **rate table** `RATES` in `data.py`, keyed by family, seeded with public-list $/MTok, each class env-overridable per family; unknown model → `default` family (today's blended rates); `<synthetic>` → `synthetic` family priced at $0. | "Cost incurred" by model is only meaningful with per-model rates; rejected the single blended rate. |
-| D4 | `CLIENT $` = `cost × CCTOP_MARGIN`, a **markup multiplier**, default `1.0` (client = cost). | User chose the multiplier convention; rejected percentage and gross-margin conventions. |
+| D4 | `CLIENT $` = `cost × CCTAB_MARGIN`, a **markup multiplier**, default `1.0` (client = cost). | User chose the multiplier convention; rejected percentage and gross-margin conventions. |
 | D5 | Days are bucketed by **local calendar day** derived from each line's UTC `timestamp`. | Matches a user's wall-clock workday; rejected UTC-day bucketing. `2026-06-16T02:30:00Z` under `TZ=UTC` → day `2026-06-16`. |
 | D6 | Two top-level views are Textual **App `MODES`** — `daily` (`DEFAULT_MODE`) and `projects` (the existing leaderboard moved verbatim into a `Screen`). `d`/`p` switch modes; `g` toggles cwd/global scope at runtime for the active view. | Independent navigable stacks per the Textual modes idiom; rejected pushing daily as a modal over the leaderboard. |
 | D7 | Model family resolved by **case-insensitive substring** match on the model id (`opus`/`sonnet`/`haiku`/`fable`), `<synthetic>` → `synthetic`, else `default`. | Survives version bumps (`claude-opus-4-8`, future `-4-9`); rejected exact-id mapping. |
@@ -40,15 +40,15 @@ accurate, and `p`/`d` switch between daily and the leaderboard.
 
 | Path | Action | Layer | Summary |
 |------|--------|-------|---------|
-| `src/cctop/data.py` | MODIFY | data | `ModelRate`/`RATES` table + per-family env overrides; `family_of()`, `cost_of(usage, family)`, `MARGIN`/`client_cost()`; `_local_day()` (Z-safe); extend `_parse_file` to bucket `(day, family) → Usage`; add `Session.by_model`, `Project.by_model`, `Project.cost`; add `DayUsage` + `scan_daily(projects_dir, cwd)`. Keep `Usage.cost`, `RATE_*`, `scan()` merge behavior intact. |
-| `src/cctop/app.py` | MODIFY | tui | Restructure into `MODES = {"daily": DailyScreen, "projects": ProjectsScreen}`, `DEFAULT_MODE="daily"`; move existing leaderboard into `ProjectsScreen` (cost accessors swapped to accurate `Project.cost`/`Session.cost`); new `DailyScreen` (day rows × model columns); `model_cell()` helper; `CCTop` holds `scope_cwd` + threaded scan shared by both screens; `parse_scope(argv)` + `main()` reads `sys.argv`; `action_refresh` rescans + re-renders the **active** screen; `action_toggle_scope` + mode-switch bindings; client cost via `cost_cell`. |
+| `src/cctab/data.py` | MODIFY | data | `ModelRate`/`RATES` table + per-family env overrides; `family_of()`, `cost_of(usage, family)`, `MARGIN`/`client_cost()`; `_local_day()` (Z-safe); extend `_parse_file` to bucket `(day, family) → Usage`; add `Session.by_model`, `Project.by_model`, `Project.cost`; add `DayUsage` + `scan_daily(projects_dir, cwd)`. Keep `Usage.cost`, `RATE_*`, `scan()` merge behavior intact. |
+| `src/cctab/app.py` | MODIFY | tui | Restructure into `MODES = {"daily": DailyScreen, "projects": ProjectsScreen}`, `DEFAULT_MODE="daily"`; move existing leaderboard into `ProjectsScreen` (cost accessors swapped to accurate `Project.cost`/`Session.cost`); new `DailyScreen` (day rows × model columns); `model_cell()` helper; `CCTab` holds `scope_cwd` + threaded scan shared by both screens; `parse_scope(argv)` + `main()` reads `sys.argv`; `action_refresh` rescans + re-renders the **active** screen; `action_toggle_scope` + mode-switch bindings; client cost via `cost_cell`. |
 | `tests/test_data.py` | MODIFY | tests | AC-DATA-6, AC-DATA-7, AC-DATA-8, AC-DATA-9, AC-DATA-10, AC-DATA-11, AC-DATA-12 (extend `_write_session` to emit `timestamp`/`model` per row) |
 | `tests/test_app.py` | MODIFY | tests | AC-APP-1 (update: enter projects mode before leaderboard keys), AC-APP-2, AC-APP-3, AC-APP-4 |
-| `README.md` | MODIFY | other | Daily-default + `--global`, `CCTOP_MARGIN`, per-family `CCTOP_RATE_*` env vars, updated keys table, two-view note. |
+| `README.md` | MODIFY | other | Daily-default + `--global`, `CCTAB_MARGIN`, per-family `CCTAB_RATE_*` env vars, updated keys table, two-view note. |
 
 ## Contracts
 
-All in `src/cctop/data.py`. Rates and the margin are the **only** new numeric knobs and live
+All in `src/cctab/data.py`. Rates and the margin are the **only** new numeric knobs and live
 here exclusively (Worker Rule: number/cost discipline).
 
 ```python
@@ -64,8 +64,8 @@ class ModelRate:
     cache_read: float
 
 def _rate(family: str, defaults: ModelRate) -> ModelRate:
-    """Per-family rate, each class overridable via CCTOP_RATE_<FAMILY>_<CLASS>."""
-    g = lambda cls, d: float(os.environ.get(f"CCTOP_RATE_{family.upper()}_{cls}", d))
+    """Per-family rate, each class overridable via CCTAB_RATE_<FAMILY>_<CLASS>."""
+    g = lambda cls, d: float(os.environ.get(f"CCTAB_RATE_{family.upper()}_{cls}", d))
     return ModelRate(
         input=g("INPUT", defaults.input),
         output=g("OUTPUT", defaults.output),
@@ -83,7 +83,7 @@ RATES: dict[str, ModelRate] = {
     "default":   ModelRate(RATE_INPUT, RATE_OUTPUT, RATE_CACHE_WRITE, RATE_CACHE_READ),
 }
 
-MARGIN = float(os.environ.get("CCTOP_MARGIN", "1.0"))
+MARGIN = float(os.environ.get("CCTAB_MARGIN", "1.0"))
 
 def family_of(model: str | None) -> str: ...        # substring match, D7
 def cost_of(usage: Usage, family: str) -> float: ... # usage × RATES[family], / 1e6
@@ -135,7 +135,7 @@ Textual **modes** (resolved via Context7 `/websites/textual_textualize_io`, *Gui
 Modes*). Build workers use exactly this shape and do not query MCP:
 
 ```python
-class CCTop(App):
+class CCTab(App):
     MODES = {"daily": DailyScreen, "projects": ProjectsScreen}
     DEFAULT_MODE = "daily"
     BINDINGS = [
@@ -156,7 +156,7 @@ class CCTop(App):
   day-desc). Each model cell = `model_cell(usage, family)` rendering `f"${cost:,.2f}({human(tok)})"`,
   dim when zero; `EST $`/`CLIENT $` via existing `cost_cell`. Summary bar (`#summary`) shows
   scope (`cwd: ~/p` vs `global`), day count, total tokens, total `EST $`, total `CLIENT $`,
-  and the active `CCTOP_MARGIN`. **Empty state:** when `app.days` is empty, the table is empty
+  and the active `CCTAB_MARGIN`. **Empty state:** when `app.days` is empty, the table is empty
   and the summary reads e.g. `no transcripts for ~/p — press g for global`. **Loading:**
   summary shows `scanning…` (today's pattern).
 - **`ProjectsScreen(Screen)`** — the current leaderboard moved into a `Screen`: existing
@@ -165,7 +165,7 @@ class CCTop(App):
   the old code:** (1) its row set is filtered by `app.scope_cwd` (cwd → only that project;
   global → all); (2) the cost column/sort read the accurate `Project.cost` (not
   `p.usage.cost`) — `SORTABLE["cost"]` becomes `lambda p: p.cost`. The `#summary` Static lives
-  on this screen (not on `CCTop`); `action_refresh` on `CCTop` triggers a rescan and the
+  on this screen (not on `CCTab`); `action_refresh` on `CCTab` triggers a rescan and the
   active screen re-renders its own summary/table.
 - **`SessionsScreen`** — structurally unchanged, but its `EST $` cells read `s.cost` (the
   per-family-accurate `Session.cost`) instead of `s.usage.cost`, and the title total uses
@@ -190,12 +190,12 @@ respectively, e.g. `{"input_tokens": 10, "timestamp": "2026-06-16T02:30:00Z", "m
 
 ## Behavior
 
-- **Launch / scope.** The console entry point is `cctop = "cctop.app:main"` (verified
-  `pyproject.toml`) and `python -m cctop` delegates to the same `cctop.app:main` — so
+- **Launch / scope.** The console entry point is `cctab = "cctab.app:main"` (verified
+  `pyproject.toml`) and `python -m cctab` delegates to the same `cctab.app:main` — so
   `parse_scope` and the argv read live in **`app.py`**, not `__main__.py` (which stays a thin
   re-export). `main()` calls `parse_scope(sys.argv[1:])`, which returns `True` iff `--global`
-  or `-g` is present, then constructs `CCTop(global_scope=...)`.
-  `CCTop.scope_cwd = None if global_scope else os.getcwd()`, captured **once at construction**
+  or `-g` is present, then constructs `CCTab(global_scope=...)`.
+  `CCTab.scope_cwd = None if global_scope else os.getcwd()`, captured **once at construction**
   (not re-read on rescans). Textual no-ops unhandled key bindings, so leaderboard keys
   (`c`/`m`/…) simply do nothing while the daily screen is active — no error.
 - **Scan.** The threaded `@work` scan calls `scan_daily(cwd=self.scope_cwd)` for the daily
@@ -214,7 +214,7 @@ respectively, e.g. `{"input_tokens": 10, "timestamp": "2026-06-16T02:30:00Z", "m
   `cost × MARGIN`.
 - **Edge cases:** a day with only synthetic activity shows all-zero columns and `EST $ $0.00`;
   a directory with no matching transcripts → empty daily table + empty-state summary;
-  `CCTOP_MARGIN` unset → `CLIENT $` equals `EST $`.
+  `CCTAB_MARGIN` unset → `CLIENT $` equals `EST $`.
 
 ## Acceptance Criteria
 
@@ -227,7 +227,7 @@ respectively, e.g. `{"input_tokens": 10, "timestamp": "2026-06-16T02:30:00Z", "m
   (`cost_of(Usage(input=1_000_000), "opus")` → `RATES["opus"].input`; `cost_of(Usage(input=1_000_000,
   output=1_000_000), "synthetic")` → `0.0`) → `test_cost_of_uses_family_rates` in
   `tests/test_data.py`.
-- **AC-DATA-8**: WHEN `CCTOP_MARGIN=1.5` THE SYSTEM SHALL compute `client_cost(10.0)` → `15.0`,
+- **AC-DATA-8**: WHEN `CCTAB_MARGIN=1.5` THE SYSTEM SHALL compute `client_cost(10.0)` → `15.0`,
   and WHEN unset SHALL compute `client_cost(10.0)` → `10.0` (monkeypatch `data.MARGIN`) →
   `test_client_cost_applies_margin` in `tests/test_data.py`.
 - **AC-DATA-9**: WHEN two sessions in the same cwd have usage on the same local day with
@@ -249,9 +249,9 @@ respectively, e.g. `{"input_tokens": 10, "timestamp": "2026-06-16T02:30:00Z", "m
   `test_project_cost_sums_per_model` in `tests/test_data.py`.
 - **AC-APP-2**: WHEN the app mounts with no flag THE SYSTEM SHALL start in `"daily"` mode with a
   cwd scope and a daily table present → `test_app_starts_in_daily_mode` in `tests/test_app.py`.
-- **AC-APP-3**: WHEN `parse_scope` (imported as `from cctop.app import parse_scope`) is given
+- **AC-APP-3**: WHEN `parse_scope` (imported as `from cctab.app import parse_scope`) is given
   argv THE SYSTEM SHALL return `True` for `["--global"]` and `["-g"]` and `False` for `[]`; and
-  `CCTop(global_scope=True).scope_cwd is None` while `CCTop(global_scope=False).scope_cwd ==
+  `CCTab(global_scope=True).scope_cwd is None` while `CCTab(global_scope=False).scope_cwd ==
   os.getcwd()` → `test_parse_scope_and_app_scope` in `tests/test_app.py`.
 - **AC-APP-4**: WHEN `d`, `p`, and `g` are pressed THE SYSTEM SHALL switch to daily mode,
   projects mode, and toggle scope respectively without error (and the leaderboard's
@@ -260,7 +260,7 @@ respectively, e.g. `{"input_tokens": 10, "timestamp": "2026-06-16T02:30:00Z", "m
 - **AC-APP-1** (existing, **updated**): the test must press `p` to enter projects mode before
   exercising the leaderboard keys (`c`/`m`/`t`/`slash`/`escape`), since those bindings now live
   on `ProjectsScreen` and the app starts in daily mode; `app.projects` is still populated by
-  `CCTop`'s threaded scan before the poll. **AC-DATA-1..5** (existing) SHALL continue to pass
+  `CCTab`'s threaded scan before the poll. **AC-DATA-1..5** (existing) SHALL continue to pass
   **unchanged** (backward compatibility of `Usage.cost`, `RATE_INPUT/OUTPUT`, `scan` merge,
   `shorten`).
 
@@ -268,7 +268,7 @@ respectively, e.g. `{"input_tokens": 10, "timestamp": "2026-06-16T02:30:00Z", "m
 
 - **A1**: No public list price for `claude-fable-5` is known at plan time, so `fable` is seeded
   at opus-tier rates as a visible placeholder. **If false / when known:** set the real numbers
-  in the `RATES["fable"]` seed (still env-overridable via `CCTOP_RATE_FABLE_*`); no structural
+  in the `RATES["fable"]` seed (still env-overridable via `CCTAB_RATE_FABLE_*`); no structural
   change.
 - **A2**: Every usage-bearing JSONL line carries a co-located top-level `timestamp` and
   `message.model` (verified: 22,318/22,318 sampled lines have both). **If false:** the missing
@@ -276,7 +276,7 @@ respectively, e.g. `{"input_tokens": 10, "timestamp": "2026-06-16T02:30:00Z", "m
   never raises.
 - **A3**: `os.getcwd()` at launch equals the transcript `cwd` string for the current project
   (Claude Code records the absolute working dir). **If false:** the daily view shows the
-  empty-state hint and `g` reaches the data; consider documenting that cctop must be launched
+  empty-state hint and `g` reaches the data; consider documenting that cctab must be launched
   from the project root. STOP and ask the user only if the cwd encoding proves systematically
   mismatched.
 - **A4**: Public seed rates (opus 15/75, sonnet 3/15, haiku 1/5; cache-write = 1.25× input,
@@ -289,7 +289,7 @@ respectively, e.g. `{"input_tokens": 10, "timestamp": "2026-06-16T02:30:00Z", "m
 
 ## Rationale
 
-The request reframes cctop from a directory leaderboard into a **time × model cost report** for
+The request reframes cctab from a directory leaderboard into a **time × model cost report** for
 the current project, with a billing markup. D1/D2 follow the user's explicit choices (daily
 default, day-rows × model-columns, `$cost(tok)` cells). The load-bearing engineering call is
 D3: once each cell shows a per-model dollar figure, the existing single blended rate would be
@@ -323,9 +323,9 @@ made explicit.
 ## Canonical Delta
 
 Create `docs/canonical/daily-cost-view.md` capturing, for future T1 work: the model-family rate
-table pattern (`RATES` keyed by family, `CCTOP_RATE_<FAMILY>_<CLASS>` overrides, `default`
+table pattern (`RATES` keyed by family, `CCTAB_RATE_<FAMILY>_<CLASS>` overrides, `default`
 fallback, `synthetic`=$0), the `family_of` substring-resolution rule, the local-day bucketing
-contract (`Z`-normalized, `"unknown"` sentinel sorts last), the `CCTOP_MARGIN` markup-multiplier
+contract (`Z`-normalized, `"unknown"` sentinel sorts last), the `CCTAB_MARGIN` markup-multiplier
 semantics, and the two-view `MODES` structure (`daily` default + `projects` leaderboard, `g`
 scope toggle). Note that adding a new model family is now T1 (mirror a `RATES` row + the
 `FAMILIES` column tuple), and that cost is per-model accurate everywhere via `cost_of`.

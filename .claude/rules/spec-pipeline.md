@@ -1,15 +1,15 @@
-# Spec Pipeline Rules — cctop
+# Spec Pipeline Rules — cctab
 
-Repo-specific grounding for the spec pipeline. `cctop` is a single-process, read-only
+Repo-specific grounding for the spec pipeline. `cctab` is a single-process, read-only
 [Textual](https://textual.textualize.io/) TUI that scans Claude Code's local JSONL
 transcripts (`~/.claude/projects/<encoded-cwd>/*.jsonl`) and rolls up token usage per
-directory. Two source modules: `src/cctop/data.py` (the foundation: parsing, aggregation,
-cost math) and `src/cctop/app.py` (the TUI). `§ Worker Rules` and `§ Test Rules` are inlined
+directory. Two source modules: `src/cctab/data.py` (the foundation: parsing, aggregation,
+cost math) and `src/cctab/app.py` (the TUI). `§ Worker Rules` and `§ Test Rules` are inlined
 verbatim into worker prompts by `/spec:build`.
 
 ## Risk Tiers
 
-cctop has **no standing T3 surfaces**. It is a read-only viewer: no auth, no permission logic,
+cctab has **no standing T3 surfaces**. It is a read-only viewer: no auth, no permission logic,
 no persisted writes, no migrations, no money *mutation* (the `EST $` column is a display-only
 estimate), and no cross-process or cross-area contracts. Treat the ceiling as **T2-max** unless
 a spec introduces one of the mid-build upgrade triggers below.
@@ -34,7 +34,7 @@ pipeline only when it needs delegation or durability (see shared § Pipeline Ent
 ## Planning
 
 - **Discovery surfaces.** There are no generated contract files in this repo. The one external
-  contract is **Claude Code's transcript schema**, encoded in `src/cctop/data.py:_parse_file`
+  contract is **Claude Code's transcript schema**, encoded in `src/cctab/data.py:_parse_file`
   (`obj["cwd"]`, `message.usage.{input_tokens, output_tokens, cache_creation_input_tokens,
   cache_read_input_tokens}`). Ground new data-shape work against **real logs**: inspect an
   actual transcript (`ls ~/.claude/projects/*/ | head`, then read a `*.jsonl`) rather than
@@ -52,22 +52,22 @@ pipeline only when it needs delegation or durability (see shared § Pipeline Ent
     and the drill-down show.
   - *Data-shape design:* what fields `Usage`/`Session`/`Project` need; how cost/rates are
     handled (rates stay in `data.py`).
-  - *Env surface:* any new `CCTOP_*` or `CLAUDE_PROJECTS_DIR` semantics, documented in both
+  - *Env surface:* any new `CCTAB_*` or `CLAUDE_PROJECTS_DIR` semantics, documented in both
     `README.md` and the `data.py` rate block.
-  - *Wiring rows the structure demands:* a new key binding → File Plan rows for `CCTop.BINDINGS`
+  - *Wiring rows the structure demands:* a new key binding → File Plan rows for `CCTab.BINDINGS`
     **and** an `action_*` method **and** the README key table; a new column → `COLUMNS` **and**
     `SORTABLE` **and** the `refresh_table` row build (**and** a `Binding` if it's sortable).
 
 ## Build
 
-cctop has no codegen, migrations, i18n, or route generation — orchestrator integration duties
+cctab has no codegen, migrations, i18n, or route generation — orchestrator integration duties
 are light:
 
-- After a green phase that touches `src/cctop/app.py`, run the **app-boot check**:
+- After a green phase that touches `src/cctab/app.py`, run the **app-boot check**:
   `uv run pytest tests/test_app.py` — it mounts the full Textual app headlessly and dispatches
   the key bindings.
 - After data-layer changes, an optional **real-log smoke**:
-  `uv run python -c "from cctop.data import scan; print(len(scan()))"` (the unit tests already
+  `uv run python -c "from cctab.data import scan; print(len(scan()))"` (the unit tests already
   cover aggregation with synthetic dirs).
 - If a spec adds a third-party dependency, the **orchestrator** (never a worker) runs
   `uv sync` and commits the updated `uv.lock`.
@@ -85,17 +85,17 @@ Fable before landing the write / exec / network surface that triggered the upgra
 - **Managed / read-only surfaces.** `uv.lock` is owned by uv — never hand-edit it; dependency
   changes go through `pyproject.toml` plus the orchestrator running `uv sync`. Never touch
   `.venv/` or `__pycache__/`.
-- **Layer boundary.** `src/cctop/data.py` is the foundation layer and MUST NOT import from
-  `cctop.app` (no `from cctop.app …`, no `import cctop.app`). The dependency is one-way:
+- **Layer boundary.** `src/cctab/data.py` is the foundation layer and MUST NOT import from
+  `cctab.app` (no `from cctab.app …`, no `import cctab.app`). The dependency is one-way:
   `app.py` imports from `data.py`. A reverse import is a hard finding.
 - **Number / cost discipline.** The public `$/MTok` rates and their env overrides live ONLY in
-  `src/cctop/data.py` as the `RATE_*` module constants; cost is computed by `Usage.cost`. Never
+  `src/cctab/data.py` as the `RATE_*` module constants; cost is computed by `Usage.cost`. Never
   hardcode a rate or a token-class weight elsewhere. Number/`$` *formatting* lives in `app.py`
   helpers `human` / `num_cell` / `cost_cell` — reuse them; don't re-derive formatting inline.
 - **Robustness.** Parsing is best-effort by design: `_parse_file` swallows `OSError` and
   per-line `json.JSONDecodeError` so one bad transcript never breaks a scan. Preserve this — a
   new parse path must not raise on malformed input or missing keys.
-- **No stdout in the TUI.** Never `print()` from `src/cctop/app.py` or `src/cctop/data.py` — it
+- **No stdout in the TUI.** Never `print()` from `src/cctab/app.py` or `src/cctab/data.py` — it
   corrupts the Textual screen. User-facing text goes through widgets. `print()` is allowed only
   in standalone scripts (`smoke_test.py`) and tests.
 - **Scoped self-verify.** Workers may run `uv run ruff check <their files>` and
@@ -125,11 +125,11 @@ Fable before landing the write / exec / network surface that triggered the upgra
 
 Severity calibrations for the reviewer (each phrasing is file:line-verifiable):
 
-- `from cctop.app` / `import cctop.app` anywhere in `src/cctop/data.py` → **hard**
+- `from cctab.app` / `import cctab.app` anywhere in `src/cctab/data.py` → **hard**
   (layer-boundary violation; data is the foundation).
 - A `$/MTok` rate literal or token-class weight outside `data.py`'s `RATE_*` constants /
   `Usage.cost` → **hard** (number discipline).
-- `print(` in `src/cctop/app.py` or `src/cctop/data.py` → **hard** (corrupts the TUI; scripts
+- `print(` in `src/cctab/app.py` or `src/cctab/data.py` → **hard** (corrupts the TUI; scripts
   and tests are exempt).
 - A `uv.lock` diff with no corresponding `pyproject.toml` dependency change → **hard**
   (hand-edited managed surface).
@@ -137,7 +137,7 @@ Severity calibrations for the reviewer (each phrasing is file:line-verifiable):
   matching `SORTABLE` + `refresh_table` row wiring → **hard** (half-wired surface).
 - A `_parse_file` change that can raise on malformed JSON, missing keys, or an unreadable file
   (drops the best-effort guards) → **hard**.
-- A new `CCTOP_*` / `CLAUDE_PROJECTS_DIR` env surface not documented in `README.md` and the
+- A new `CCTAB_*` / `CLAUDE_PROJECTS_DIR` env surface not documented in `README.md` and the
   `data.py` rate block → **soft**.
 - Bare `except:` instead of the specific `except OSError` / `except json.JSONDecodeError` the
   code already uses → **soft**.

@@ -2,8 +2,8 @@
 
 import asyncio
 
-from cctop.app import CCTop
-from cctop.data import scan
+from cctab.app import CCTab
+from cctab.data import scan
 
 
 async def main() -> None:
@@ -15,7 +15,7 @@ async def main() -> None:
         print(f"  top: {top.key}  total={top.usage.total}  sessions={top.usage.sessions}")
 
     # TUI layer, driven headlessly
-    app = CCTop()
+    app = CCTab()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         # let the threaded scan finish

@@ -24,16 +24,16 @@ PROJECTS_DIR = Path(
 
 # Rough blended public $/MTok rates. Override via env if your mix differs.
 # Cache reads are ~10% of input, which is why raw token totals overstate cost.
-RATE_INPUT = float(os.environ.get("CCTOP_RATE_INPUT", "3.00"))
-RATE_OUTPUT = float(os.environ.get("CCTOP_RATE_OUTPUT", "15.00"))
-RATE_CACHE_WRITE = float(os.environ.get("CCTOP_RATE_CACHE_WRITE", "3.75"))
-RATE_CACHE_READ = float(os.environ.get("CCTOP_RATE_CACHE_READ", "0.30"))
+RATE_INPUT = float(os.environ.get("CCTAB_RATE_INPUT", "3.00"))
+RATE_OUTPUT = float(os.environ.get("CCTAB_RATE_OUTPUT", "15.00"))
+RATE_CACHE_WRITE = float(os.environ.get("CCTAB_RATE_CACHE_WRITE", "3.75"))
+RATE_CACHE_READ = float(os.environ.get("CCTAB_RATE_CACHE_READ", "0.30"))
 
 HOME = str(Path.home())
 
 # ---------------------------------------------------------------------------
 # Per-family rate table (D3).  Each family's $/MTok rates are independently
-# env-overridable via CCTOP_RATE_<FAMILY>_<CLASS>.
+# env-overridable via CCTAB_RATE_<FAMILY>_<CLASS>.
 # ---------------------------------------------------------------------------
 
 # Display / column order for the four named model families.
@@ -49,9 +49,9 @@ class ModelRate:
 
 
 def _rate(family: str, defaults: ModelRate) -> ModelRate:
-    """Per-family rate, each class overridable via CCTOP_RATE_<FAMILY>_<CLASS>."""
+    """Per-family rate, each class overridable via CCTAB_RATE_<FAMILY>_<CLASS>."""
     def g(cls: str, d: float) -> float:
-        return float(os.environ.get(f"CCTOP_RATE_{family.upper()}_{cls}", d))
+        return float(os.environ.get(f"CCTAB_RATE_{family.upper()}_{cls}", d))
 
     return ModelRate(
         input=g("INPUT", defaults.input),
@@ -73,10 +73,10 @@ RATES: dict[str, ModelRate] = {
 }
 
 # Client markup multiplier (D4). Unset → CLIENT $ equals EST $.
-MARGIN = float(os.environ.get("CCTOP_MARGIN", "1.0"))
+MARGIN = float(os.environ.get("CCTAB_MARGIN", "1.0"))
 
 # Per-directory config filename (D1).
-DIR_CONFIG_NAME = ".cctop"
+DIR_CONFIG_NAME = ".cctab"
 
 
 def family_of(model: str | None) -> str:
@@ -108,12 +108,12 @@ def cost_of(usage: "Usage", family: str) -> float:
 
 
 def client_cost(cost: float) -> float:
-    """Apply the markup multiplier (CCTOP_MARGIN) to a cost figure."""
+    """Apply the markup multiplier (CCTAB_MARGIN) to a cost figure."""
     return cost * MARGIN
 
 
 def read_dir_margin(directory: "str | Path") -> "float | None":
-    """Margin from <directory>/.cctop, or None if absent/unreadable/malformed/out-of-range.
+    """Margin from <directory>/.cctab, or None if absent/unreadable/malformed/out-of-range.
 
     Best-effort — never raises. Returns None unless the JSON is an object whose
     "margin" is a real number (NOT bool, NOT a numeric string) that is finite and >= 0.
@@ -131,7 +131,7 @@ def read_dir_margin(directory: "str | Path") -> "float | None":
 
 
 def write_dir_margin(directory: "str | Path", margin: float) -> bool:
-    """Write {"margin": margin} to <directory>/.cctop atomically. Return True on success,
+    """Write {"margin": margin} to <directory>/.cctab atomically. Return True on success,
     False on OSError. Never raises, never prints.
 
     Uses a same-directory temp file + os.replace for atomicity on macOS/POSIX (D7).
@@ -142,7 +142,7 @@ def write_dir_margin(directory: "str | Path", margin: float) -> bool:
         ntf = tempfile.NamedTemporaryFile(
             mode="w",
             dir=directory,
-            prefix=".cctop.",
+            prefix=".cctab.",
             suffix=".tmp",
             delete=False,
         )
@@ -163,7 +163,7 @@ def write_dir_margin(directory: "str | Path", margin: float) -> bool:
 def set_margin(value: float) -> None:
     """Set the active client margin.
 
-    MUST mutate the module global so client_cost sees it. A ``from cctop.data
+    MUST mutate the module global so client_cost sees it. A ``from cctab.data
     import MARGIN`` rebind would NOT update the module attribute.
     """
     globals()["MARGIN"] = value

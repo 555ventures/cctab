@@ -15,18 +15,18 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cctop import data
-from cctop.app import CCTop, DailyScreen
+from cctab import data
+from cctab.app import CCTab, DailyScreen
 
 
 def test_single_daily_mode_no_scope_bindings() -> None:
     """AC-CWD-1: only the daily mode exists; p/g/d change neither screen nor scope."""
 
     async def drive() -> None:
-        app = CCTop()
+        app = CCTab()
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            assert set(CCTop.MODES.keys()) == {"daily"}
+            assert set(CCTab.MODES.keys()) == {"daily"}
             assert isinstance(app.screen, DailyScreen)
             scope_before = app.scope_cwd
             await pilot.press("p")
@@ -48,10 +48,10 @@ def test_load_data_scopes_to_launch_cwd(monkeypatch) -> None:
         seen["cwd"] = cwd
         return []
 
-    monkeypatch.setattr("cctop.app.scan_daily", spy_scan_daily)
+    monkeypatch.setattr("cctab.app.scan_daily", spy_scan_daily)
 
     async def drive() -> None:
-        app = CCTop(launch_cwd="/x/y")
+        app = CCTab(launch_cwd="/x/y")
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             for _ in range(50):
@@ -67,7 +67,7 @@ def test_refresh_and_quit_dispatch() -> None:
     """AC-CWD-3: r reloads/re-renders without raising; q still quits."""
 
     async def drive() -> None:
-        app = CCTop(launch_cwd=os.getcwd())
+        app = CCTab(launch_cwd=os.getcwd())
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             await pilot.press("r")
@@ -82,30 +82,30 @@ def test_refresh_and_quit_dispatch() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC-CFG-5, AC-CFG-6 — per-directory margin config (.cctop)
+# AC-CFG-5, AC-CFG-6 — per-directory margin config (.cctab)
 # ---------------------------------------------------------------------------
 
 
-def test_launch_reads_dotcctop_margin(tmp_path: Path, monkeypatch) -> None:
-    """AC-CFG-5: CCTop(launch_cwd=D) with D/.cctop {"margin": 3.0} sets active margin to 3.0.
+def test_launch_reads_dotcctab_margin(tmp_path: Path, monkeypatch) -> None:
+    """AC-CFG-5: CCTab(launch_cwd=D) with D/.cctab {"margin": 3.0} sets active margin to 3.0.
 
-    .cctop takes precedence over CCTOP_MARGIN env — client_cost(10.0) must equal 30.0.
+    .cctab takes precedence over CCTAB_MARGIN env — client_cost(10.0) must equal 30.0.
     Restores data.MARGIN via monkeypatch to prevent module-global leakage (A6).
     """
     # Simulate the env value already baked into the module at import (data.MARGIN is
-    # read from CCTOP_MARGIN at import time, so a late setenv would NOT affect it — set
+    # read from CCTAB_MARGIN at import time, so a late setenv would NOT affect it — set
     # the module global directly). monkeypatch restores the true original at teardown (A6).
     monkeypatch.setattr(data, "MARGIN", 1.3)
 
-    # Write a .cctop file in tmp_path specifying margin 3.0 — it must win over env 1.3.
-    dotcctop = tmp_path / ".cctop"
-    dotcctop.write_text(json.dumps({"margin": 3.0}))
+    # Write a .cctab file in tmp_path specifying margin 3.0 — it must win over env 1.3.
+    dotcctab = tmp_path / ".cctab"
+    dotcctab.write_text(json.dumps({"margin": 3.0}))
 
     async def drive() -> None:
-        app = CCTop(launch_cwd=str(tmp_path))
+        app = CCTab(launch_cwd=str(tmp_path))
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            # Active margin must be 3.0, read from .cctop, overriding env 1.3.
+            # Active margin must be 3.0, read from .cctab, overriding env 1.3.
             assert data.client_cost(10.0) == pytest.approx(30.0), (
                 f"expected client_cost(10.0)==30.0 but got {data.client_cost(10.0)}; "
                 f"data.MARGIN={data.MARGIN}"
@@ -123,7 +123,7 @@ def test_margin_input_mounted_lazily(tmp_path: Path) -> None:
     """
 
     async def drive() -> None:
-        app = CCTop(launch_cwd=str(tmp_path))
+        app = CCTab(launch_cwd=str(tmp_path))
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             # No margin Input on the screen until the user asks for it.
@@ -140,7 +140,7 @@ def test_margin_input_mounted_lazily(tmp_path: Path) -> None:
 
 
 def test_edit_margin_sets_and_writes(tmp_path: Path, monkeypatch) -> None:
-    """AC-CFG-6: pressing e, typing 2.5, and submitting sets active margin to 2.5 and writes .cctop.
+    """AC-CFG-6: pressing e, typing 2.5, and submitting sets active margin to 2.5 and writes .cctab.
 
     client_cost(10.0) must equal 25.0 after submit. write_dir_margin must be called with
     (launch_cwd, 2.5). Restores data.MARGIN via monkeypatch to prevent leakage (A6).
@@ -153,7 +153,7 @@ def test_edit_margin_sets_and_writes(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(data, "write_dir_margin", write_spy)
 
     async def drive() -> None:
-        app = CCTop(launch_cwd=str(tmp_path))
+        app = CCTab(launch_cwd=str(tmp_path))
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             # Press e to reveal the margin input.
@@ -194,7 +194,7 @@ def test_edit_margin_invalid_no_change(tmp_path: Path, monkeypatch) -> None:
         margin_before = data.MARGIN
 
         async def drive(value: str = bad_value) -> None:
-            app = CCTop(launch_cwd=str(tmp_path))
+            app = CCTab(launch_cwd=str(tmp_path))
             async with app.run_test(size=(120, 40)) as pilot:
                 await pilot.pause()
                 await pilot.press("e")
@@ -222,15 +222,15 @@ def test_edit_margin_invalid_no_change(tmp_path: Path, monkeypatch) -> None:
 
 def _day(day: str, **fam_usages):
     """Build a DayUsage with the given family -> Usage map."""
-    from cctop.data import DayUsage
+    from cctab.data import DayUsage
 
     return DayUsage(day=day, by_model=dict(fam_usages))
 
 
 def test_daily_csv_shape_and_totals(monkeypatch) -> None:
     """AC-CSV-1: daily_csv emits the D4 header, the data row, and a TOTAL row matching it."""
-    from cctop.app import daily_csv
-    from cctop.data import Usage
+    from cctab.app import daily_csv
+    from cctab.data import Usage
 
     monkeypatch.setattr(data, "MARGIN", 1.0)  # client == est for this AC
 
@@ -254,8 +254,8 @@ def test_daily_csv_shape_and_totals(monkeypatch) -> None:
 
 def test_daily_csv_raw_numbers_and_missing_family(monkeypatch) -> None:
     """AC-CSV-2: numbers are raw (no $/k) and a day missing a family renders 0/0.00, no raise."""
-    from cctop.app import daily_csv
-    from cctop.data import Usage
+    from cctab.app import daily_csv
+    from cctab.data import Usage
 
     monkeypatch.setattr(data, "MARGIN", 1.0)
 
@@ -278,44 +278,44 @@ def test_daily_csv_raw_numbers_and_missing_family(monkeypatch) -> None:
 
 def test_system_clipboard_copy_best_effort(monkeypatch) -> None:
     """AC-CSV-4: system_clipboard_copy returns False (never raises) when no tool exists."""
-    from cctop.app import system_clipboard_copy
+    from cctab.app import system_clipboard_copy
 
     # No clipboard binary resolvable → must degrade to False, not raise.
-    monkeypatch.setattr("cctop.app.shutil.which", lambda name: None)
+    monkeypatch.setattr("cctab.app.shutil.which", lambda name: None)
     assert system_clipboard_copy("day,est_usd\nTOTAL,1.00\n") is False
 
     # A resolvable tool that exits non-zero also yields False (best-effort).
-    monkeypatch.setattr("cctop.app.shutil.which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr("cctab.app.shutil.which", lambda name: "/usr/bin/" + name)
 
     class _Proc:
         returncode = 1
 
-    monkeypatch.setattr("cctop.app.subprocess.run", lambda *a, **k: _Proc())
+    monkeypatch.setattr("cctab.app.subprocess.run", lambda *a, **k: _Proc())
     assert system_clipboard_copy("x") is False
 
     # A clean exit yields True.
     class _OK:
         returncode = 0
 
-    monkeypatch.setattr("cctop.app.subprocess.run", lambda *a, **k: _OK())
+    monkeypatch.setattr("cctab.app.subprocess.run", lambda *a, **k: _OK())
     assert system_clipboard_copy("x") is True
 
 
 def _drive_days(monkeypatch, days):
-    """Mount CCTop with app.days forced to `days` via a stubbed scan_daily."""
-    monkeypatch.setattr("cctop.app.scan_daily", lambda *a, **k: days)
+    """Mount CCTab with app.days forced to `days` via a stubbed scan_daily."""
+    monkeypatch.setattr("cctab.app.scan_daily", lambda *a, **k: days)
 
 
 def test_space_toggles_selection(monkeypatch) -> None:
     """AC-CSV-3: space toggles the cursor day in/out of DailyScreen.selected."""
-    from cctop.data import Usage
+    from cctab.data import Usage
 
     monkeypatch.setattr(data, "MARGIN", 1.0)
     days = [_day("2026-06-16", opus=Usage(input=1_000_000))]
     _drive_days(monkeypatch, days)
 
     async def drive() -> None:
-        app = CCTop(launch_cwd="/x/y")
+        app = CCTab(launch_cwd="/x/y")
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             for _ in range(50):
@@ -341,7 +341,7 @@ def test_multiselect_sequential_rows(monkeypatch) -> None:
     Regression: refresh_daily()/table.clear() on every toggle reset the cursor to row 0,
     so 'down, space' kept re-toggling the same row. The marker is now updated in place.
     """
-    from cctop.data import Usage
+    from cctab.data import Usage
 
     monkeypatch.setattr(data, "MARGIN", 1.0)
     days = [
@@ -352,7 +352,7 @@ def test_multiselect_sequential_rows(monkeypatch) -> None:
     _drive_days(monkeypatch, days)
 
     async def drive() -> None:
-        app = CCTop(launch_cwd="/x/y")
+        app = CCTab(launch_cwd="/x/y")
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             for _ in range(50):
@@ -380,8 +380,8 @@ def test_multiselect_sequential_rows(monkeypatch) -> None:
 
 def test_copy_csv_marked_vs_all(monkeypatch) -> None:
     """AC-CSV-4: y copies daily_csv(marked) when any marked, else daily_csv(all visible)."""
-    from cctop.app import daily_csv
-    from cctop.data import Usage
+    from cctab.app import daily_csv
+    from cctab.data import Usage
 
     monkeypatch.setattr(data, "MARGIN", 1.0)
     days = [
@@ -391,7 +391,7 @@ def test_copy_csv_marked_vs_all(monkeypatch) -> None:
     _drive_days(monkeypatch, days)
 
     async def drive() -> None:
-        app = CCTop(launch_cwd="/x/y")
+        app = CCTab(launch_cwd="/x/y")
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             for _ in range(50):
@@ -406,7 +406,7 @@ def test_copy_csv_marked_vs_all(monkeypatch) -> None:
             monkeypatch.setattr(app, "copy_to_clipboard", clip)
             # Stub the native clipboard fallback so the test never shells out to pbcopy
             # (which would clobber the developer's real clipboard).
-            monkeypatch.setattr("cctop.app.system_clipboard_copy", lambda text: True)
+            monkeypatch.setattr("cctab.app.system_clipboard_copy", lambda text: True)
 
             # Nothing marked → copies all visible days.
             await pilot.press("y")

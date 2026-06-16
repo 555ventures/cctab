@@ -1,4 +1,4 @@
-"""cctop — a Textual TUI over Claude Code token usage."""
+"""cctab — a Textual TUI over Claude Code token usage."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static
 
-import cctop.data as _data
-from cctop.data import (
+import cctab.data as _data
+from cctab.data import (
     FAMILIES,
     DayUsage,
     Usage,
@@ -80,7 +80,7 @@ def model_cell(usage: object | None, family: str) -> Text:
 def system_clipboard_copy(text: str) -> bool:
     """Best-effort copy to the OS clipboard via a platform CLI. Returns True on success.
 
-    cctop's other clipboard path is OSC 52 (``App.copy_to_clipboard``), which many
+    cctab's other clipboard path is OSC 52 (``App.copy_to_clipboard``), which many
     terminals silently drop (Terminal.app has no OSC 52 support; tmux blocks it without
     ``set-clipboard on``), so the keypress appears to work but nothing reaches the
     clipboard. As a fallback we shell out to the platform clipboard tool. Best-effort:
@@ -216,7 +216,7 @@ class DailyScreen(Screen):
 
     def refresh_daily(self) -> None:
         """Re-render the table from app.days."""
-        app: CCTop = self.app  # type: ignore[assignment]
+        app: CCTab = self.app  # type: ignore[assignment]
         days: list[DayUsage] = app.days
         table = self.query_one("#daily-table", DataTable)
         # table.clear() resets the cursor to row 0; remember where it was so a rescan
@@ -301,7 +301,7 @@ class DailyScreen(Screen):
         if not raw:
             return
 
-        app: CCTop = self.app  # type: ignore[assignment]
+        app: CCTab = self.app  # type: ignore[assignment]
         try:
             v = float(raw)
         except ValueError:
@@ -312,7 +312,7 @@ class DailyScreen(Screen):
 
         set_margin(v)
         ok = _data.write_dir_margin(app._launch_cwd, v)
-        app._margin_source = ".cctop"
+        app._margin_source = ".cctab"
         if not ok:
             app._write_failed = True
         else:
@@ -321,7 +321,7 @@ class DailyScreen(Screen):
 
     def action_toggle_select(self) -> None:
         """Toggle the cursor row's day in/out of the marked set (space binding)."""
-        app: CCTop = self.app  # type: ignore[assignment]
+        app: CCTab = self.app  # type: ignore[assignment]
         table = self.query_one("#daily-table", DataTable)
         i = table.cursor_row
         if not (0 <= i < len(app.days)):
@@ -338,7 +338,7 @@ class DailyScreen(Screen):
 
     def action_copy_csv(self) -> None:
         """Copy marked days (or all visible) to the clipboard as CSV (y binding)."""
-        app: CCTop = self.app  # type: ignore[assignment]
+        app: CCTab = self.app  # type: ignore[assignment]
         if self.selected:
             rows = [d for d in app.days if d.day in self.selected]
         else:
@@ -360,7 +360,7 @@ class DailyScreen(Screen):
 # ---------------------------------------------------------------------------
 
 
-class CCTop(App):
+class CCTab(App):
     """Claude Code token usage, top-style."""
 
     MODES = {
@@ -380,7 +380,7 @@ class CCTop(App):
         self._launch_cwd: str = launch_cwd or os.getcwd()
         # Always scoped to the launch cwd — global scope is gone.
         self.scope_cwd: str = self._launch_cwd
-        # Margin source: ".cctop", "env", or "unset"
+        # Margin source: ".cctab", "env", or "unset"
         self._margin_source: str = "unset"
         # Tracks whether the last write_dir_margin call failed.
         self._write_failed: bool = False
@@ -389,18 +389,18 @@ class CCTop(App):
         m = current_margin()
         label = f"{m} ({self._margin_source})"
         if self._write_failed:
-            label += " (could not write .cctop)"
+            label += " (could not write .cctab)"
         return label
 
     def on_mount(self) -> None:
         self.title = "cctab"
         self.sub_title = "Claude Code usage → billable cost"
-        # Capture env/default margin before reading .cctop (D3).
+        # Capture env/default margin before reading .cctab (D3).
         env_margin = current_margin()
         m = read_dir_margin(self._launch_cwd)
         set_margin(m if m is not None else env_margin)
         if m is not None:
-            self._margin_source = ".cctop"
+            self._margin_source = ".cctab"
         elif env_margin != 1.0:
             self._margin_source = "env"
         else:
@@ -438,7 +438,7 @@ class CCTop(App):
 
 
 def main() -> None:
-    CCTop().run()
+    CCTab().run()
 
 
 if __name__ == "__main__":

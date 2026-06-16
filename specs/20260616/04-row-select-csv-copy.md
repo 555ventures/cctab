@@ -14,7 +14,7 @@ depended_on_by: []
 ## Goal
 
 Let the user pick which days go into a bill and copy them to the clipboard as CSV for pasting
-into Google Sheets. Textual's `DataTable` has no native multi-row selection, so cctop adds a
+into Google Sheets. Textual's `DataTable` has no native multi-row selection, so cctab adds a
 hand-rolled selection set: `space` toggles the cursor's day in/out of a marked set (shown with
 a marker), and `y` copies the marked days as CSV — or, if nothing is marked, the whole visible
 table. "Done" means a user can mark a billing period's days, press `y`, and paste a clean
@@ -37,7 +37,7 @@ numeric CSV (no `$`, no `k`/`M` abbreviations) into a spreadsheet.
 
 | Path | Action | Layer | Summary |
 |------|--------|-------|---------|
-| src/cctop/app.py | MODIFY | tui | `DailyScreen`: add `__init__` initializing `self.selected: set[str] = set()` (D1); append `Binding("space","toggle_select","Mark")` and `Binding("y","copy_csv","Copy CSV")` to `BINDINGS`; in `on_mount` add the leftmost `mark` column (D2); in `refresh_daily` prune `self.selected` to present days, prepend the marker cell to each row's `cells` list (before `d.day`), and pass `key=d.day` to `add_row`. Add `action_toggle_select` (cursor row index → toggle `app.days[i].day`, guard empty/out-of-range, re-render) and `action_copy_csv` (marked-or-all → `daily_csv` → `copy_to_clipboard` → `notify`). Add module-level `daily_csv(days) -> str` using the stdlib `csv` module + the None-guard (D5). |
+| src/cctab/app.py | MODIFY | tui | `DailyScreen`: add `__init__` initializing `self.selected: set[str] = set()` (D1); append `Binding("space","toggle_select","Mark")` and `Binding("y","copy_csv","Copy CSV")` to `BINDINGS`; in `on_mount` add the leftmost `mark` column (D2); in `refresh_daily` prune `self.selected` to present days, prepend the marker cell to each row's `cells` list (before `d.day`), and pass `key=d.day` to `add_row`. Add `action_toggle_select` (cursor row index → toggle `app.days[i].day`, guard empty/out-of-range, re-render) and `action_copy_csv` (marked-or-all → `daily_csv` → `copy_to_clipboard` → `notify`). Add module-level `daily_csv(days) -> str` using the stdlib `csv` module + the None-guard (D5). |
 | README.md | MODIFY | other | Document `space` (mark/unmark a day) and `y` (copy marked days, or all, as CSV) in the key table and a short "Copy for billing" note. |
 | tests/test_app.py | MODIFY | tests | AC-CSV-1..4 — `daily_csv` exact output incl. a day **missing a family** (the None-guard path); `space` toggles `selected`; `y` calls `copy_to_clipboard` with marked-only vs all-visible CSV. |
 

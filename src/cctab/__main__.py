@@ -1,4 +1,4 @@
-from cctop.app import main
+from cctab.app import main
 
 if __name__ == "__main__":
     main()

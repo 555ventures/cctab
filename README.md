@@ -61,45 +61,43 @@ token counts and the `model` id. `cctab` scans those files, buckets the tokens b
 calendar day** and **model family** (Haiku, Sonnet, Opus, Fable), prices each bucket with that
 family's own `$/MTok` rates, and shows you one row per day. It is **read-only** — it never writes
 to, deletes, or moves anything under `~/.claude`, and it makes no network calls. The only file it
-ever writes is the small `.cctop` margin file in your launch directory, and only when you edit
+ever writes is the small `.cctab` margin file in your launch directory, and only when you edit
 the margin in-app.
 
 ---
 
 ## Install & run
 
-Requires [`uv`](https://docs.astral.sh/uv/) (recommended) or any Python ≥ 3.9.
+Requires [`uv`](https://docs.astral.sh/uv/) (recommended) or any Python ≥ 3.9. Clone it once:
 
 ```bash
-# Run from the project you want to bill — no install, uv resolves deps ephemerally.
-# The view is ALWAYS scoped to the directory you launch from.
-cd ~/Projects/some-client-project
-uv run --project ~/Projects/cctop cctab
+git clone https://github.com/555ventures/cctab.git
 ```
 
-Or install it once as a tool and run `cctab` anywhere:
+Install it as a tool and run `cctab` from any project you want to bill — the view is **always
+scoped to the directory you launch from**:
 
 ```bash
-uv tool install ~/Projects/cctop
+uv tool install ./cctab
 cd ~/Projects/some-client-project
 cctab
+```
+
+Or run it without installing (uv resolves deps ephemerally):
+
+```bash
+cd ~/Projects/some-client-project
+uv run --project /path/to/cctab cctab
 ```
 
 Without `uv`:
 
 ```bash
-cd ~/Projects/cctop
+cd cctab
 python -m venv .venv && . .venv/bin/activate
 pip install -e .
-cctab        # then cd into a project and run it there
+cd ~/Projects/some-client-project && cctab
 ```
-
-> [!NOTE]
-> **Naming.** The PyPI distribution and the command are **`cctab`** (the unhyphenated `cctop`
-> was already taken on PyPI by an unrelated project). The Python import package is still `cctop`,
-> and the config identifiers below keep the `cctop` / `CCTOP_` prefix — so any existing `.cctop`
-> files and `CCTOP_*` environment variables keep working unchanged. If you previously installed
-> the old name, run `uv tool install --force ~/Projects/cctop` to pick up the `cctab` command.
 
 ---
 
@@ -139,12 +137,12 @@ parseable timestamp, always sorts last). The columns:
 The bar across the top summarizes the whole visible (scoped) range:
 
 ```
-cwd: ~/Projects/wbm-booking · 6 days   4.2M tok   $58.41 est   $87.62 client   ·  margin:1.5 (.cctop)
+cwd: ~/Projects/wbm-booking · 6 days   4.2M tok   $58.41 est   $87.62 client   ·  margin:1.5 (.cctab)
 ```
 
 …showing the scoped directory, the day count, total tokens, total `EST $`, total `CLIENT $`, and
-the **active margin with its source** (`.cctop`, `env`, or `unset`). If a margin write failed,
-it appends `(could not write .cctop)`.
+the **active margin with its source** (`.cctab`, `env`, or `unset`). If a margin write failed,
+it appends `(could not write .cctab)`.
 
 ---
 
@@ -197,11 +195,11 @@ native tool was found and `cctab` fell back to OSC 52 — verify the paste.
 `CLIENT $ = EST $ × margin`, where `margin` is a markup multiplier (e.g. `1.5` = a 50% markup;
 `1.0` = bill at cost). The margin is resolved per launch with this **precedence**:
 
-1. **`<launch dir>/.cctop`** — a per-directory JSON file, written when you edit the margin in-app.
-2. **`CCTOP_MARGIN`** env var — a global default for directories with no `.cctop`.
+1. **`<launch dir>/.cctab`** — a per-directory JSON file, written when you edit the margin in-app.
+2. **`CCTAB_MARGIN`** env var — a global default for directories with no `.cctab`.
 3. **`1.0`** — no markup (`CLIENT $` equals `EST $`).
 
-### The `.cctop` file
+### The `.cctab` file
 
 A tiny JSON file at the root of the directory you launch from:
 
@@ -216,21 +214,21 @@ A tiny JSON file at the root of the directory you launch from:
   a numeric *string*) is silently ignored and falls through to the next precedence source.
 - Writes are **atomic** (temp file + `os.replace`), so a crash can't corrupt it.
 
-Because `.cctop` holds a client rate that usually differs per relationship, consider git-ignoring
+Because `.cctab` holds a client rate that usually differs per relationship, consider git-ignoring
 it:
 
 ```gitignore
-.cctop
+.cctab
 ```
 
 ### Editing the margin in-app
 
 Press `e`, type a new multiplier (e.g. `1.3`), and press `Enter` — `cctab` writes it to
-`<launch dir>/.cctop` immediately and re-renders. `escape` cancels. An invalid entry
+`<launch dir>/.cctab` immediately and re-renders. `escape` cancels. An invalid entry
 (non-numeric, negative, `inf`) is ignored with no write. Set a global default without a file via:
 
 ```bash
-CCTOP_MARGIN=1.3 cctab
+CCTAB_MARGIN=1.3 cctab
 ```
 
 ---
@@ -259,29 +257,29 @@ a raw token total badly overstates cost, and why `cctab` prices each class separ
 The `model` id on each message is matched **case-insensitively, by substring, in priority order**
 `opus → sonnet → haiku → fable`. The literal `<synthetic>` model maps to a zero-cost `synthetic`
 family (so synthetic/test traffic never inflates a bill). Anything unrecognized — or missing —
-falls back to a `default` family priced at the blended `CCTOP_RATE_*` rates below.
+falls back to a `default` family priced at the blended `CCTAB_RATE_*` rates below.
 
 ### Overriding rates
 
 Every rate is env-overridable in `$/MTok`. Per-family overrides take the form
-`CCTOP_RATE_<FAMILY>_<CLASS>`:
+`CCTAB_RATE_<FAMILY>_<CLASS>`:
 
 ```
-CCTOP_RATE_HAIKU_INPUT        CCTOP_RATE_HAIKU_OUTPUT
-CCTOP_RATE_HAIKU_CACHE_WRITE  CCTOP_RATE_HAIKU_CACHE_READ
+CCTAB_RATE_HAIKU_INPUT        CCTAB_RATE_HAIKU_OUTPUT
+CCTAB_RATE_HAIKU_CACHE_WRITE  CCTAB_RATE_HAIKU_CACHE_READ
 
-CCTOP_RATE_SONNET_INPUT       CCTOP_RATE_SONNET_OUTPUT
-CCTOP_RATE_SONNET_CACHE_WRITE CCTOP_RATE_SONNET_CACHE_READ
+CCTAB_RATE_SONNET_INPUT       CCTAB_RATE_SONNET_OUTPUT
+CCTAB_RATE_SONNET_CACHE_WRITE CCTAB_RATE_SONNET_CACHE_READ
 
-CCTOP_RATE_OPUS_INPUT         CCTOP_RATE_OPUS_OUTPUT
-CCTOP_RATE_OPUS_CACHE_WRITE   CCTOP_RATE_OPUS_CACHE_READ
+CCTAB_RATE_OPUS_INPUT         CCTAB_RATE_OPUS_OUTPUT
+CCTAB_RATE_OPUS_CACHE_WRITE   CCTAB_RATE_OPUS_CACHE_READ
 
-CCTOP_RATE_FABLE_INPUT        CCTOP_RATE_FABLE_OUTPUT
-CCTOP_RATE_FABLE_CACHE_WRITE  CCTOP_RATE_FABLE_CACHE_READ
+CCTAB_RATE_FABLE_INPUT        CCTAB_RATE_FABLE_OUTPUT
+CCTAB_RATE_FABLE_CACHE_WRITE  CCTAB_RATE_FABLE_CACHE_READ
 ```
 
-The blended-rate overrides `CCTOP_RATE_INPUT`, `CCTOP_RATE_OUTPUT`, `CCTOP_RATE_CACHE_WRITE`, and
-`CCTOP_RATE_CACHE_READ` (defaults `3.00 / 15.00 / 3.75 / 0.30`) apply to the `default` family —
+The blended-rate overrides `CCTAB_RATE_INPUT`, `CCTAB_RATE_OUTPUT`, `CCTAB_RATE_CACHE_WRITE`, and
+`CCTAB_RATE_CACHE_READ` (defaults `3.00 / 15.00 / 3.75 / 0.30`) apply to the `default` family —
 i.e. any model whose family isn't one of the four named above.
 
 ---
@@ -291,10 +289,10 @@ i.e. any model whose family isn't one of the four named above.
 | Setting | Type | Default | Effect |
 |---------|------|---------|--------|
 | `CLAUDE_PROJECTS_DIR` | env | `~/.claude/projects` | Where to read transcripts from. |
-| `CCTOP_MARGIN` | env | `1.0` | Global client markup multiplier (overridden by a `.cctop` file). |
-| `CCTOP_RATE_<FAMILY>_<CLASS>` | env | see table | Per-family `$/MTok` rate override. |
-| `CCTOP_RATE_<CLASS>` | env | `3 / 15 / 3.75 / 0.30` | Blended rate for the `default` family. |
-| `<launch dir>/.cctop` | file | — | Per-directory margin, `{"margin": <number>}`; written on in-app edit. |
+| `CCTAB_MARGIN` | env | `1.0` | Global client markup multiplier (overridden by a `.cctab` file). |
+| `CCTAB_RATE_<FAMILY>_<CLASS>` | env | see table | Per-family `$/MTok` rate override. |
+| `CCTAB_RATE_<CLASS>` | env | `3 / 15 / 3.75 / 0.30` | Blended rate for the `default` family. |
+| `<launch dir>/.cctab` | file | — | Per-directory margin, `{"margin": <number>}`; written on in-app edit. |
 
 ---
 
@@ -309,7 +307,7 @@ i.e. any model whose family isn't one of the four named above.
 - **Days are local-time.** Timestamps are converted from UTC to your machine's local day; lines
   with no parseable timestamp land in the `unknown` row.
 - **Read-only.** `cctab` never modifies your Claude Code transcripts and makes no network calls.
-  The sole write is the `.cctop` margin file, only on an in-app margin edit.
+  The sole write is the `.cctab` margin file, only on an in-app margin edit.
 - For an authoritative metered cost, cross-check with
   [`ccusage`](https://github.com/ryoppippi/ccusage).
 
@@ -325,9 +323,9 @@ uv run ruff check .           # lint
 
 The codebase is two modules with a strict one-way dependency:
 
-- **`src/cctop/data.py`** — the foundation layer: transcript parsing, per-day/per-family
+- **`src/cctab/data.py`** — the foundation layer: transcript parsing, per-day/per-family
   aggregation, the `$/MTok` rate table, and cost math. Pure, no UI. Never imports from `app`.
-- **`src/cctop/app.py`** — the [Textual](https://textual.textualize.io/) TUI: the daily screen,
+- **`src/cctab/app.py`** — the [Textual](https://textual.textualize.io/) TUI: the daily screen,
   key bindings, table rendering, the CSV exporter, and the `human` / `cost_cell` / `model_cell`
   formatting helpers. Imports *from* `data.py`, never the reverse.
 
