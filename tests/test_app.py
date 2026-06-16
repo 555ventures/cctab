@@ -335,6 +335,49 @@ def test_space_toggles_selection(monkeypatch) -> None:
     asyncio.run(drive())
 
 
+def test_multiselect_sequential_rows(monkeypatch) -> None:
+    """AC-CSV-3: down+space across rows marks each distinct day (cursor not snapped to 0).
+
+    Regression: refresh_daily()/table.clear() on every toggle reset the cursor to row 0,
+    so 'down, space' kept re-toggling the same row. The marker is now updated in place.
+    """
+    from cctop.data import Usage
+
+    monkeypatch.setattr(data, "MARGIN", 1.0)
+    days = [
+        _day("2026-06-16", sonnet=Usage(input=298_000)),
+        _day("2026-06-13", sonnet=Usage(input=26_200_000)),
+        _day("2026-06-12", opus=Usage(input=5_900_000)),
+    ]
+    _drive_days(monkeypatch, days)
+
+    async def drive() -> None:
+        app = CCTop(launch_cwd="/x/y")
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(50):
+                if app.days:
+                    break
+                await asyncio.sleep(0.05)
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, DailyScreen)
+            await pilot.press("space")
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            # All three distinct days marked — not the top row toggled three times.
+            assert screen.selected == {"2026-06-16", "2026-06-13", "2026-06-12"}
+
+    asyncio.run(drive())
+
+
 def test_copy_csv_marked_vs_all(monkeypatch) -> None:
     """AC-CSV-4: y copies daily_csv(marked) when any marked, else daily_csv(all visible)."""
     from cctop.app import daily_csv

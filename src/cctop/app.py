@@ -219,6 +219,9 @@ class DailyScreen(Screen):
         app: CCTop = self.app  # type: ignore[assignment]
         days: list[DayUsage] = app.days
         table = self.query_one("#daily-table", DataTable)
+        # table.clear() resets the cursor to row 0; remember where it was so a rescan
+        # (or a future full refresh) doesn't snap the selection cursor back to the top.
+        prev_cursor = table.cursor_row
         table.clear()
 
         # Drop any marked days that vanished after a rescan (D7).
@@ -237,6 +240,10 @@ class DailyScreen(Screen):
             cells.append(cost_cell(d.cost))
             cells.append(cost_cell(d.client))
             table.add_row(*cells, key=d.day)
+
+        # Restore the cursor row (clamped) so rebuilding the table doesn't lose the user's place.
+        if table.row_count:
+            table.move_cursor(row=min(prev_cursor, table.row_count - 1))
 
         scope_cwd = app.scope_cwd
         scope_label = f"cwd: {shorten(scope_cwd)}"
@@ -324,7 +331,10 @@ class DailyScreen(Screen):
             self.selected.discard(day)
         else:
             self.selected.add(day)
-        self.refresh_daily()
+        # Update only the marker cell — a full refresh_daily() would clear() the table and
+        # snap the cursor back to row 0, breaking sequential multi-select.
+        marker = Text("●", style="bold green") if day in self.selected else Text("")
+        table.update_cell(day, "mark", marker)
 
     def action_copy_csv(self) -> None:
         """Copy marked days (or all visible) to the clipboard as CSV (y binding)."""
