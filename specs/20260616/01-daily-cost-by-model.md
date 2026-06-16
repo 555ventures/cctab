@@ -1,6 +1,6 @@
 ---
 date: 2026-06-16
-status: implementing
+status: done
 risk: T2
 area: daily-cost-view
 design: false

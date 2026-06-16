@@ -18,7 +18,10 @@ from cctop.data import (
     DayUsage,
     Project,
     Session,
+    Usage,
+    client_cost,
     cost_of,
+    cwd_in_scope,
     scan,
     scan_daily,
     shorten,
@@ -71,11 +74,10 @@ def model_cell(usage: object | None, family: str) -> Text:
     Reuses human() for the token part and data.cost_of for the dollar part —
     no rate literal, no re-derived formatting.
     """
-    from cctop.data import Usage as _Usage
-
     if usage is None:
         return Text("", style="dim", justify="right")
-    assert isinstance(usage, _Usage)
+    if not isinstance(usage, Usage):
+        return Text("", style="dim", justify="right")
     dollars = cost_of(usage, family)
     tokens = usage.total
     if tokens == 0 and dollars == 0.0:
@@ -248,7 +250,7 @@ class DailyScreen(Screen):
                 ("   "),
                 (f"${agg_cost:,.2f} est", "bold yellow"),
                 ("   "),
-                (f"${agg_cost * app._margin():,.2f} client", "green"),
+                (f"${client_cost(agg_cost):,.2f} client", "green"),
                 (f"   ·  margin:{margin_val}", "dim"),
             )
         self.query_one("#summary", Static).update(summary_text)
@@ -304,9 +306,10 @@ class ProjectsScreen(Screen):
     def _visible(self) -> list[Project]:
         app: CCTop = self.app  # type: ignore[assignment]
         rows = app.projects
-        # Filter by scope_cwd when set
+        # Filter by scope_cwd when set — the launch dir and everything beneath it
+        # (worktrees, .claude subdirs), matching the daily view's scope.
         if app.scope_cwd is not None:
-            rows = [p for p in rows if p.key == app.scope_cwd]
+            rows = [p for p in rows if cwd_in_scope(p.key, app.scope_cwd)]
         if self.filter_text:
             needle = self.filter_text.lower()
             rows = [p for p in rows if needle in shorten(p.key).lower()]
@@ -430,8 +433,10 @@ class CCTop(App):
         super().__init__()
         self.projects: list[Project] = []
         self.days: list[DayUsage] = []
+        # _launch_cwd: captured once at construction, never re-read
+        self._launch_cwd: str = os.getcwd()
         # scope_cwd: None → global; str → scoped to that cwd
-        self.scope_cwd: str | None = None if global_scope else os.getcwd()
+        self.scope_cwd: str | None = None if global_scope else self._launch_cwd
 
     def _margin(self) -> float:
         from cctop.data import MARGIN
@@ -452,13 +457,13 @@ class CCTop(App):
 
     @work(thread=True, exclusive=True)
     def load_data(self) -> None:
-        projects = scan(merge_by_cwd=True)
-        # Use the projects-screen merge_by_cwd if available
+        merge_by_cwd = True
         try:
             ps: ProjectsScreen = self.get_screen("projects")  # type: ignore[assignment]
-            projects = scan(merge_by_cwd=ps.merge_by_cwd)
+            merge_by_cwd = ps.merge_by_cwd
         except Exception:
             pass
+        projects = scan(merge_by_cwd=merge_by_cwd)
         days = scan_daily(cwd=self.scope_cwd)
         self.call_from_thread(self._on_loaded, projects, days)
 
@@ -486,7 +491,7 @@ class CCTop(App):
     def action_toggle_scope(self) -> None:
         """Flip scope_cwd between the launch cwd and None (global)."""
         if self.scope_cwd is None:
-            self.scope_cwd = os.getcwd()
+            self.scope_cwd = self._launch_cwd
         else:
             self.scope_cwd = None
         self.load_data()

@@ -107,6 +107,20 @@ def client_cost(cost: float) -> float:
     return cost * MARGIN
 
 
+def cwd_in_scope(session_cwd: str, scope: str | None) -> bool:
+    """True if *session_cwd* belongs to *scope* (the launch directory).
+
+    scope is None → global (everything matches). Otherwise a session matches when
+    its cwd is the scope directory itself OR any directory nested beneath it — so
+    launching in ``~/Projects/wbm-booking`` folds in its ``.claude/worktrees/*``
+    and ``.claude/agents`` sessions rather than dropping them.
+    """
+    if scope is None:
+        return True
+    scope = scope.rstrip(os.sep)
+    return session_cwd == scope or session_cwd.startswith(scope + os.sep)
+
+
 def _local_day(timestamp: str | None) -> str:
     """Convert a UTC ISO timestamp to a local YYYY-MM-DD string.
 
@@ -178,6 +192,7 @@ class Session:
     cwd: str
     usage: Usage
     by_model: dict[str, Usage] = field(default_factory=dict)
+    by_day_model: dict[str, dict[str, Usage]] = field(default_factory=dict)
 
     @property
     def cost(self) -> float:
@@ -237,6 +252,7 @@ def _parse_file(path: Path) -> Session:
     usage = Usage(sessions=1)
     cwd: str | None = None
     by_model: dict[str, Usage] = {}
+    by_day_model: dict[str, dict[str, Usage]] = {}
     try:
         with path.open("r", errors="ignore") as fh:
             for line in fh:
@@ -271,6 +287,18 @@ def _parse_file(path: Path) -> Session:
                         by_model[fam].output += line_output
                         by_model[fam].cache_create += line_cache_create
                         by_model[fam].cache_read += line_cache_read
+                        # Per-(day, family) bucketing — skip zero-usage lines
+                        if line_input or line_output or line_cache_create or line_cache_read:
+                            ts = obj.get("timestamp")
+                            day = _local_day(ts if isinstance(ts, str) else None)
+                            if day not in by_day_model:
+                                by_day_model[day] = {}
+                            if fam not in by_day_model[day]:
+                                by_day_model[day][fam] = Usage()
+                            by_day_model[day][fam].input += line_input
+                            by_day_model[day][fam].output += line_output
+                            by_day_model[day][fam].cache_create += line_cache_create
+                            by_day_model[day][fam].cache_read += line_cache_read
     except OSError:
         pass
     return Session(
@@ -278,6 +306,7 @@ def _parse_file(path: Path) -> Session:
         cwd=cwd or path.parent.name,
         usage=usage,
         by_model=by_model,
+        by_day_model=by_day_model,
     )
 
 
@@ -347,7 +376,8 @@ def scan_daily(
 ) -> list[DayUsage]:
     """Aggregate token usage by local calendar day and model family.
 
-    cwd: when given, only sessions whose transcript cwd matches are included;
+    cwd: when given, include sessions whose transcript cwd is this directory or
+         any directory nested beneath it (worktrees, .claude subdirs fold in);
          None → all directories (global scope).
     Sort: real days descending, "unknown" always last.
     """
@@ -360,13 +390,23 @@ def scan_daily(
 
     for i, path in enumerate(files, start=1):
         session = _parse_file(path)
-        # Filter by cwd when requested
-        if cwd is not None and session.cwd != cwd:
+        # Filter by scope when requested — the launch dir AND everything nested
+        # beneath it (worktrees, .claude/agents) fold into the same daily rows.
+        if not cwd_in_scope(session.cwd, cwd):
             if progress is not None:
                 progress(i, total)
             continue
-        # Re-parse file to get per-line (day, family) bucketing
-        _accumulate_daily(path, session.cwd, by_day)
+        # Merge per-(day, family) usage from the single parse pass
+        for day, fam_map in session.by_day_model.items():
+            if day not in by_day:
+                by_day[day] = {}
+            for fam, fam_usage in fam_map.items():
+                if fam not in by_day[day]:
+                    by_day[day][fam] = Usage()
+                by_day[day][fam].input += fam_usage.input
+                by_day[day][fam].output += fam_usage.output
+                by_day[day][fam].cache_create += fam_usage.cache_create
+                by_day[day][fam].cache_read += fam_usage.cache_read
         if progress is not None:
             progress(i, total)
 
@@ -376,50 +416,6 @@ def scan_daily(
     real = sorted((d for d in days if d.day != "unknown"), key=lambda d: d.day, reverse=True)
     unknown = [d for d in days if d.day == "unknown"]
     return real + unknown
-
-
-def _accumulate_daily(path: Path, session_cwd: str, by_day: dict[str, dict[str, Usage]]) -> None:
-    """Parse *path* and accumulate (day, family) → Usage into *by_day*.
-
-    Best-effort: never raises on malformed input, missing keys, or unreadable files.
-    """
-    try:
-        with path.open("r", errors="ignore") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                msg = obj.get("message")
-                if not isinstance(msg, dict):
-                    continue
-                u = msg.get("usage")
-                if not isinstance(u, dict):
-                    continue
-                line_input = u.get("input_tokens") or 0
-                line_output = u.get("output_tokens") or 0
-                line_cache_create = u.get("cache_creation_input_tokens") or 0
-                line_cache_read = u.get("cache_read_input_tokens") or 0
-                # Skip lines with no actual usage
-                if not (line_input or line_output or line_cache_create or line_cache_read):
-                    continue
-                ts = obj.get("timestamp")
-                day = _local_day(ts if isinstance(ts, str) else None)
-                model_id = msg.get("model")
-                fam = family_of(model_id if isinstance(model_id, str) else None)
-                if day not in by_day:
-                    by_day[day] = {}
-                if fam not in by_day[day]:
-                    by_day[day][fam] = Usage()
-                by_day[day][fam].input += line_input
-                by_day[day][fam].output += line_output
-                by_day[day][fam].cache_create += line_cache_create
-                by_day[day][fam].cache_read += line_cache_read
-    except OSError:
-        pass
 
 
 def shorten(path: str) -> str:

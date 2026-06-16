@@ -13,7 +13,19 @@ from pathlib import Path
 
 import pytest
 
-from cctop.data import RATE_INPUT, RATE_OUTPUT, Usage, scan, shorten
+from cctop.data import (
+    RATE_INPUT,
+    RATE_OUTPUT,
+    RATES,
+    Usage,
+    _local_day,
+    client_cost,
+    cost_of,
+    family_of,
+    scan,
+    scan_daily,
+    shorten,
+)
 
 
 def _write_session(folder: Path, name: str, cwd: str, rows: list[dict]) -> None:
@@ -97,8 +109,6 @@ def test_shorten_collapses_home(monkeypatch) -> None:
 
 def test_family_of_maps_by_substring() -> None:
     """AC-DATA-6: family_of maps model ids by case-insensitive substring match."""
-    from cctop.data import family_of  # type: ignore[attr-defined]
-
     assert family_of("claude-opus-4-8") == "opus"
     assert family_of("claude-sonnet-4-6") == "sonnet"
     assert family_of("claude-fable-5") == "fable"
@@ -113,8 +123,6 @@ def test_family_of_maps_by_substring() -> None:
 
 def test_cost_of_uses_family_rates() -> None:
     """AC-DATA-7: cost_of prices usage with per-family rates, not the blended rate."""
-    from cctop.data import RATES, cost_of  # type: ignore[attr-defined]
-
     # 1M input tokens at opus rate
     u_opus_input = Usage(input=1_000_000)
     assert cost_of(u_opus_input, "opus") == pytest.approx(RATES["opus"].input)
@@ -132,7 +140,6 @@ def test_cost_of_uses_family_rates() -> None:
 def test_client_cost_applies_margin(monkeypatch) -> None:
     """AC-DATA-8: client_cost multiplies by MARGIN; unset MARGIN defaults to 1.0."""
     import cctop.data as data
-    from cctop.data import client_cost  # type: ignore[attr-defined]
 
     # With MARGIN=1.5
     monkeypatch.setattr(data, "MARGIN", 1.5)
@@ -145,8 +152,6 @@ def test_client_cost_applies_margin(monkeypatch) -> None:
 
 def test_scan_daily_buckets_by_day_and_model(tmp_path: Path, monkeypatch) -> None:
     """AC-DATA-9: two sessions on the same cwd/day with different models merge into one DayUsage."""
-    from cctop.data import cost_of, scan_daily  # type: ignore[attr-defined]
-
     # Force local timezone to UTC so "2026-06-16T02:30:00Z" → day "2026-06-16"
     monkeypatch.setenv("TZ", "UTC")
     time.tzset()
@@ -195,8 +200,6 @@ def test_scan_daily_buckets_by_day_and_model(tmp_path: Path, monkeypatch) -> Non
 
 def test_scan_daily_filters_by_cwd(tmp_path: Path, monkeypatch) -> None:
     """AC-DATA-10: scan_daily(cwd=X) includes only X days; cwd=None includes all."""
-    from cctop.data import scan_daily  # type: ignore[attr-defined]
-
     monkeypatch.setenv("TZ", "UTC")
     time.tzset()
 
@@ -234,8 +237,6 @@ def test_scan_daily_filters_by_cwd(tmp_path: Path, monkeypatch) -> None:
 
 def test_scan_daily_handles_bad_timestamp(tmp_path: Path, monkeypatch) -> None:
     """AC-DATA-11: missing/unparseable timestamps go to 'unknown' (last); Z-suffix parses fine."""
-    from cctop.data import _local_day, scan_daily  # type: ignore[attr-defined]
-
     monkeypatch.setenv("TZ", "UTC")
     time.tzset()
 
@@ -280,8 +281,6 @@ def test_scan_daily_handles_bad_timestamp(tmp_path: Path, monkeypatch) -> None:
 
 def test_project_cost_sums_per_model(tmp_path: Path, monkeypatch) -> None:
     """AC-DATA-12: Project.cost sums per-family costs, not a blended rate on pooled tokens."""
-    from cctop.data import RATES, scan  # noqa: F401 — already imported at top
-
     monkeypatch.setenv("TZ", "UTC")
     time.tzset()
 
