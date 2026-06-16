@@ -315,3 +315,115 @@ def test_project_cost_sums_per_model(tmp_path: Path, monkeypatch) -> None:
     assert hasattr(proj, "cost"), "Project.cost property not found"
     assert proj.cost == pytest.approx(expected_cost)
     assert proj.cost != pytest.approx(blended_cost)
+
+
+# ---------------------------------------------------------------------------
+# AC-CFG-1..4 — per-directory margin config (.cctop)
+# ---------------------------------------------------------------------------
+
+
+def test_read_dir_margin_present(tmp_path: Path) -> None:
+    """AC-CFG-1: read_dir_margin returns 2.0 when <D>/.cctop is {"margin": 2.0}."""
+    from cctop.data import DIR_CONFIG_NAME, read_dir_margin
+
+    cfg = tmp_path / DIR_CONFIG_NAME
+    cfg.write_text(json.dumps({"margin": 2.0}))
+
+    result = read_dir_margin(tmp_path)
+    assert result == pytest.approx(2.0)
+
+
+def test_read_dir_margin_absent_or_malformed(tmp_path: Path) -> None:
+    """AC-CFG-2: read_dir_margin returns None for missing/malformed/out-of-range inputs."""
+    from cctop.data import DIR_CONFIG_NAME, read_dir_margin
+
+    # Case 1: no .cctop file → None, no raise
+    assert read_dir_margin(tmp_path) is None
+
+    cfg = tmp_path / DIR_CONFIG_NAME
+
+    # Case 2: invalid JSON → None, no raise
+    cfg.write_text("not json{")
+    assert read_dir_margin(tmp_path) is None
+
+    # Case 3: JSON object but no "margin" key → None
+    cfg.write_text(json.dumps({"foo": 1}))
+    assert read_dir_margin(tmp_path) is None
+
+    # Case 4: margin is a numeric string, not a number → None
+    cfg.write_text(json.dumps({"margin": "2.0"}))
+    assert read_dir_margin(tmp_path) is None
+
+    # Case 5: margin is a bool (True), not a number → None
+    cfg.write_text(json.dumps({"margin": True}))
+    assert read_dir_margin(tmp_path) is None
+
+    # Case 6: margin is negative → None
+    cfg.write_text(json.dumps({"margin": -1.0}))
+    assert read_dir_margin(tmp_path) is None
+
+    # Case 7: margin is Infinity → None.
+    # Python's json module rejects "Infinity" as invalid JSON (strict), so
+    # json.loads raises JSONDecodeError — read_dir_margin must swallow it.
+    cfg.write_text('{"margin": Infinity}')
+    result = read_dir_margin(tmp_path)
+    # json.JSONDecodeError is swallowed; must return None without raising
+    assert result is None
+
+
+def test_write_dir_margin_roundtrip(tmp_path: Path) -> None:
+    """AC-CFG-3: write_dir_margin creates .cctop with correct value; round-trips to 1.5."""
+    from cctop.data import DIR_CONFIG_NAME, read_dir_margin, write_dir_margin
+
+    returned = write_dir_margin(tmp_path, 1.5)
+
+    # Must return True on success
+    assert returned is True
+
+    # The file must exist
+    cfg = tmp_path / DIR_CONFIG_NAME
+    assert cfg.exists()
+
+    # The file content must parse back to {"margin": 1.5}
+    with cfg.open() as fh:
+        parsed = json.load(fh)
+    assert parsed == {"margin": 1.5}
+
+    # round-trip via read_dir_margin
+    assert read_dir_margin(tmp_path) == pytest.approx(1.5)
+
+    # No orphaned temp files (.cctop.*.tmp) must remain
+    orphans = list(tmp_path.glob(".cctop.*.tmp"))
+    assert orphans == [], f"Orphaned temp files found: {orphans}"
+
+
+def test_write_dir_margin_readonly_returns_false(tmp_path: Path) -> None:
+    """AC-CFG-4: write_dir_margin returns False for read-only dir; no raise; no temp file."""
+    import os
+
+    from cctop.data import DIR_CONFIG_NAME, write_dir_margin
+
+    # Create a pre-existing .cctop so we can verify it is left intact
+    existing_cfg = tmp_path / DIR_CONFIG_NAME
+    existing_cfg.write_text(json.dumps({"margin": 9.9}))
+
+    # Make the directory read-only (no write permission)
+    os.chmod(tmp_path, 0o555)
+    try:
+        result = write_dir_margin(tmp_path, 2.0)
+    finally:
+        # Restore permissions so pytest cleanup can remove tmp_path
+        os.chmod(tmp_path, 0o755)
+
+    # Must return False, never raise
+    assert result is False
+
+    # The existing .cctop must remain intact (not overwritten or corrupted)
+    assert existing_cfg.exists()
+    with existing_cfg.open() as fh:
+        intact = json.load(fh)
+    assert intact == {"margin": 9.9}
+
+    # No orphaned temp files
+    orphans = list(tmp_path.glob(".cctop.*.tmp"))
+    assert orphans == [], f"Orphaned temp files found: {orphans}"

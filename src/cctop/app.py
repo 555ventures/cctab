@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 
 from rich.text import Text
@@ -9,15 +10,19 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Static
+from textual.widgets import DataTable, Footer, Input, Static
 
+import cctop.data as _data
 from cctop.data import (
     FAMILIES,
     DayUsage,
     Usage,
     client_cost,
     cost_of,
+    current_margin,
+    read_dir_margin,
     scan_daily,
+    set_margin,
     shorten,
 )
 
@@ -75,9 +80,16 @@ def model_cell(usage: object | None, family: str) -> Text:
 class DailyScreen(Screen):
     """Daily token & cost view, per model family, cwd-scoped."""
 
+    BINDINGS = [
+        Binding("e", "edit_margin", "Edit margin"),
+        Binding("escape", "cancel_margin", "Cancel", show=False),
+    ]
+
     CSS = """
     #summary { dock: top; height: 1; padding: 0 1; background: $boost; }
     DataTable { height: 1fr; }
+    #margin-input { dock: bottom; height: 3; display: none; }
+    #margin-input.visible { display: block; }
     """
 
     def compose(self) -> ComposeResult:
@@ -85,6 +97,7 @@ class DailyScreen(Screen):
         table: DataTable = DataTable(zebra_stripes=True, id="daily-table")
         table.cursor_type = "row"
         yield table
+        yield Input(id="margin-input", placeholder="")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -139,6 +152,48 @@ class DailyScreen(Screen):
         """Re-render when this screen becomes active."""
         self.refresh_daily()
 
+    def action_edit_margin(self) -> None:
+        """Reveal the margin input and focus it (e binding)."""
+        margin_input = self.query_one("#margin-input", Input)
+        margin_input.placeholder = str(current_margin())
+        margin_input.value = ""
+        margin_input.add_class("visible")
+        margin_input.focus()
+
+    def action_cancel_margin(self) -> None:
+        """Hide the margin input without making changes (escape binding)."""
+        margin_input = self.query_one("#margin-input", Input)
+        margin_input.remove_class("visible")
+        self.query_one("#daily-table", DataTable).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle margin submission from #margin-input."""
+        margin_input = self.query_one("#margin-input", Input)
+        margin_input.remove_class("visible")
+        self.query_one("#daily-table", DataTable).focus()
+
+        raw = event.value.strip()
+        if not raw:
+            return
+
+        app: CCTop = self.app  # type: ignore[assignment]
+        try:
+            v = float(raw)
+        except ValueError:
+            return
+
+        if not (math.isfinite(v) and v >= 0):
+            return
+
+        set_margin(v)
+        ok = _data.write_dir_margin(app._launch_cwd, v)
+        app._margin_source = ".cctop"
+        if not ok:
+            app._write_failed = True
+        else:
+            app._write_failed = False
+        self.refresh_daily()
+
 
 # ---------------------------------------------------------------------------
 # Root App — single-mode controller
@@ -165,20 +220,31 @@ class CCTop(App):
         self._launch_cwd: str = launch_cwd or os.getcwd()
         # Always scoped to the launch cwd — global scope is gone.
         self.scope_cwd: str = self._launch_cwd
-
-    def _margin(self) -> float:
-        from cctop.data import MARGIN
-        return MARGIN
+        # Margin source: ".cctop", "env", or "unset"
+        self._margin_source: str = "unset"
+        # Tracks whether the last write_dir_margin call failed.
+        self._write_failed: bool = False
 
     def _margin_label(self) -> str:
-        m = self._margin()
-        if m == 1.0:
-            return "1.0 (unset)"
-        return str(m)
+        m = current_margin()
+        label = f"{m} ({self._margin_source})"
+        if self._write_failed:
+            label += " (could not write .cctop)"
+        return label
 
     def on_mount(self) -> None:
         self.title = "cctop"
         self.sub_title = "Claude Code token usage"
+        # Capture env/default margin before reading .cctop (D3).
+        env_margin = current_margin()
+        m = read_dir_margin(self._launch_cwd)
+        set_margin(m if m is not None else env_margin)
+        if m is not None:
+            self._margin_source = ".cctop"
+        elif env_margin != 1.0:
+            self._margin_source = "env"
+        else:
+            self._margin_source = "unset"
         self.load_data()
 
     # ---- data loading (threaded) -------------------------------------------

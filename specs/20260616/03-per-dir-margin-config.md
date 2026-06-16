@@ -1,6 +1,6 @@
 ---
 date: 2026-06-16
-status: hardened
+status: implementing
 risk: T3
 area: data
 design: false
@@ -34,7 +34,7 @@ file") both fire, so the write surface gets the T3 checkpoint before it lands.
 | D5 | `read_dir_margin` and `write_dir_margin` are **best-effort** like `_parse_file`: read swallows `OSError` / `json.JSONDecodeError` and returns `None` for any value that is not a finite, non-negative, non-bool real number; write swallows `OSError`, cleans up its temp file, and returns `False`. Neither raises; neither `print()`s. | Preserve robustness; a read-only dir, a hand-corrupted `.cctop`, or a negative/`inf` value must never break or poison the TUI. |
 | D6 | Margin only. `.cctop` does **not** carry rate overrides; model `$/MTok` rates stay in `data.py`'s `RATES`. | User choice; smallest schema; rates are list prices, identical everywhere. |
 | D7 | Write is atomic: `tempfile.NamedTemporaryFile(mode="w", dir=directory, prefix=".cctop.", suffix=".tmp", delete=False)` in the **same directory**, then `os.replace(tmp, <dir>/.cctop)`. On any `OSError`, unlink the temp file (best-effort) and return `False`. | Same-dir temp + `os.replace` is atomic on one filesystem (macOS/POSIX); a crash mid-write never corrupts or orphans the file. |
-| D8 | Edit binding is `e` ("edit margin") on `DailyScreen`; `escape` cancels (`action_cancel_margin`). `e` reveals an inline `Input` (`id="margin-input"`, the docked-Input pattern the removed projects filter used), prefilled with the current margin. Submit accepts a value that is a finite float `>= 0`; invalid/negative/`inf`/`nan` → no change, no write, hide input. | `e`/`escape` are free after spec `02`; reuse the proven Input pattern — no new modal (host cap: ≤1 modal/spec; we add none). Cancel mirrors the old `action_clear_filter`. |
+| D8 | Edit binding is `e` ("edit margin") on `DailyScreen`; `escape` cancels (`action_cancel_margin`). `e` reveals an inline `Input` (`id="margin-input"`, the docked-Input pattern the removed projects filter used) started **empty** with `placeholder=str(current_margin())` (the current margin shown only as a placeholder hint — **not** a prefilled value). On Enter, `float(input.value)` is parsed; if finite and `>= 0` (D5) → `set_margin`; an empty or invalid/negative/`inf`/`nan` value → no change, no write, hide input. | `e`/`escape` are free after spec `02`; reuse the proven Input pattern (the pre-02 projects filter started **empty** with a `placeholder=`) — no new modal (host cap: ≤1 modal/spec; we add none). Cancel mirrors the old `action_clear_filter`. **Amended during build (retainer ruling 2026-06-16):** original "prefilled with the current margin" contradicted AC-CFG-6 (typing `2.5` into a prefilled `"1.0"` yields `"1.02.5"` → `ValueError`); placeholder preserves the see-current-margin intent with no AC change. |
 
 ## File Plan
 
@@ -108,9 +108,10 @@ the next successful edit (atomic, D7).
 ## UI
 
 - **Margin edit Input** (`DailyScreen`): an `Input`, `id="margin-input"`, docked bottom, hidden
-  (`display: none`) until `e`, then `.visible` and focused, prefilled with `str(current_margin())`.
-  Mirrors the docked-Input CSS/visibility pattern the projects filter used (the `#filter` Input
-  in `ProjectsScreen` before spec `02`).
+  (`display: none`) until `e`, then `.visible` and focused, started **empty** with
+  `placeholder=str(current_margin())` (D8 — the current margin is a placeholder hint, not a
+  prefilled value). Mirrors the docked-Input CSS/visibility pattern the projects filter used (the
+  `#filter` Input in `ProjectsScreen` before spec `02`, which also started empty with a placeholder).
 - **Component API (embedded — workers do not query MCP).** Textual pinned **8.2.7** (verified
   against `.venv`): `textual.widgets.Input` — `.value: str`, `.focus()`,
   `.add_class("visible")` / `.remove_class("visible")`; emits `Input.Submitted` (`event.value`)
@@ -126,9 +127,10 @@ the next successful edit (atomic, D7).
   `set_margin`; then `m = read_dir_margin(self._launch_cwd)`; `set_margin(m if m is not None else
   env_margin)`. Set `_margin_source`: `".cctop"` if `m is not None`; else `"env"` if
   `env_margin != 1.0`; else `"unset"`.
-- **Edit:** `e` reveals `#margin-input` prefilled with `str(current_margin())` and focuses it.
-  `escape` → `action_cancel_margin` hides it and refocuses the table (no change). On
-  `Input.Submitted`: parse `float(event.value.strip())`.
+- **Edit:** `e` reveals `#margin-input` started **empty** with `placeholder=str(current_margin())`
+  (D8 — placeholder hint, not a prefilled value) and focuses it. `escape` → `action_cancel_margin`
+  hides it and refocuses the table (no change). On `Input.Submitted`: parse
+  `float(event.value.strip())`; an empty value (`ValueError`) is a no-op.
   - Valid `v` with `math.isfinite(v) and v >= 0`: `set_margin(v)`; `ok = write_dir_margin(
     self._launch_cwd, v)`; `_margin_source = ".cctop"`; hide input; `refresh_daily()` (re-render
     only — do **not** re-run `load_data`/`scan_daily`; `DayUsage.client` recomputes lazily from

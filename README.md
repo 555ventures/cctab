@@ -42,10 +42,12 @@ cctop
 
 ## Keys
 
-| key | action |
-|-----|--------|
-| `r` | rescan |
-| `q` | quit |
+| key      | action                              |
+|----------|-------------------------------------|
+| `r`      | rescan                              |
+| `e`      | edit client margin (daily view)     |
+| `escape` | cancel margin edit (daily view)     |
+| `q`      | quit                                |
 
 ## Cost & rates
 
@@ -82,11 +84,53 @@ family is not recognised (falls back to the `default` family).
 
 ## Client margin
 
-`CLIENT $` = `EST $` × `CCTOP_MARGIN` (a markup multiplier, default `1.0` so
-`CLIENT $` equals `EST $` when unset). Set `CCTOP_MARGIN=1.3` to add 30% markup:
+`CLIENT $` = `EST $` × margin (a markup multiplier). Each directory carries its
+own margin in a `.cctop` file at the **launch directory** root — no env variable needed.
+
+### Per-directory `.cctop` file
+
+Create (or let cctop create) a `.cctop` file in the project directory you launch from:
+
+```json
+{"margin": 2.0}
+```
+
+cctop reads it on launch and applies it to every `CLIENT $` figure. The file is
+created **only when you edit the margin in-app** — launching cctop never creates it.
+A missing, malformed, or out-of-range value silently falls back to the next source.
+
+### Editing the margin in-app
+
+| key      | action                                    |
+|----------|-------------------------------------------|
+| `e`      | open the margin editor (on the daily view)|
+| `escape` | cancel without changing the margin        |
+
+Press `e`, type a new multiplier (e.g. `1.3`), and press Enter. cctop writes the new
+value to `<launch dir>/.cctop` immediately. An invalid entry (non-numeric, negative,
+`inf`) is ignored with no write.
+
+The totals bar shows the active margin and its source, e.g. `2.0 (.cctop)`,
+`1.3 (env)`, or `1.0 (unset)`.
+
+### Precedence
+
+1. `<launch dir>/.cctop` — per-directory, written on in-app edit.
+2. `CCTOP_MARGIN` env var — global default for all directories.
+3. `1.0` — no markup (CLIENT $ = EST $).
 
 ```bash
+# global default via env (used when no .cctop present)
 CCTOP_MARGIN=1.3 cctop
+```
+
+### `.gitignore`
+
+`.cctop` holds a client rate that typically varies per billing relationship. Consider
+adding it to your `.gitignore`:
+
+```
+.cctop
 ```
 
 ## Log root

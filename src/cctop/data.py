@@ -10,7 +10,9 @@ the logs are already partitioned by directory.
 from __future__ import annotations
 
 import json
+import math
 import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,6 +75,9 @@ RATES: dict[str, ModelRate] = {
 # Client markup multiplier (D4). Unset → CLIENT $ equals EST $.
 MARGIN = float(os.environ.get("CCTOP_MARGIN", "1.0"))
 
+# Per-directory config filename (D1).
+DIR_CONFIG_NAME = ".cctop"
+
 
 def family_of(model: str | None) -> str:
     """Resolve a model id to its family key (D7).
@@ -105,6 +110,68 @@ def cost_of(usage: "Usage", family: str) -> float:
 def client_cost(cost: float) -> float:
     """Apply the markup multiplier (CCTOP_MARGIN) to a cost figure."""
     return cost * MARGIN
+
+
+def read_dir_margin(directory: "str | Path") -> "float | None":
+    """Margin from <directory>/.cctop, or None if absent/unreadable/malformed/out-of-range.
+
+    Best-effort — never raises. Returns None unless the JSON is an object whose
+    "margin" is a real number (NOT bool, NOT a numeric string) that is finite and >= 0.
+    """
+    try:
+        with open(Path(directory) / DIR_CONFIG_NAME) as f:
+            obj = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    val = obj.get("margin") if isinstance(obj, dict) else None
+    if isinstance(val, bool) or not isinstance(val, (int, float)):
+        return None
+    f_val = float(val)
+    return f_val if (math.isfinite(f_val) and f_val >= 0) else None
+
+
+def write_dir_margin(directory: "str | Path", margin: float) -> bool:
+    """Write {"margin": margin} to <directory>/.cctop atomically. Return True on success,
+    False on OSError. Never raises, never prints.
+
+    Uses a same-directory temp file + os.replace for atomicity on macOS/POSIX (D7).
+    On any OSError the temp file is unlinked (best-effort) before returning False.
+    """
+    tmp: "str | None" = None
+    try:
+        ntf = tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=directory,
+            prefix=".cctop.",
+            suffix=".tmp",
+            delete=False,
+        )
+        tmp = ntf.name
+        with ntf:
+            json.dump({"margin": margin}, ntf)
+        os.replace(tmp, Path(directory) / DIR_CONFIG_NAME)
+        return True
+    except OSError:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        return False
+
+
+def set_margin(value: float) -> None:
+    """Set the active client margin.
+
+    MUST mutate the module global so client_cost sees it. A ``from cctop.data
+    import MARGIN`` rebind would NOT update the module attribute.
+    """
+    globals()["MARGIN"] = value
+
+
+def current_margin() -> float:
+    """The active client margin (the live module-level MARGIN)."""
+    return MARGIN
 
 
 def cwd_in_scope(session_cwd: str, scope: str | None) -> bool:
