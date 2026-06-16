@@ -1,13 +1,13 @@
 [project]
-name = "cctop"
-version = "0.2.0"
-description = "htop-style TUI for Claude Code token usage, per directory"
+name = "cctab"
+version = "0.3.0"
+description = "Terminal TUI that turns Claude Code usage into an API-rate cost estimate for client billing"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["textual>=0.86"]
 
 [project.scripts]
-cctop = "cctop.app:main"
+cctab = "cctop.app:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]

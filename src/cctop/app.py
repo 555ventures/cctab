@@ -393,8 +393,8 @@ class CCTop(App):
         return label
 
     def on_mount(self) -> None:
-        self.title = "cctop"
-        self.sub_title = "Claude Code token usage"
+        self.title = "cctab"
+        self.sub_title = "Claude Code usage → billable cost"
         # Capture env/default margin before reading .cctop (D3).
         env_margin = current_margin()
         m = read_dir_margin(self._launch_cwd)
