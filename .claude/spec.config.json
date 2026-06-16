@@ -1,0 +1,21 @@
+{
+  "generatedBy": "spec@1.6.0",
+  "contractHash": "faddf130461a",
+  "gateCommand": "uv run ruff check {scopeDirs} && uv run pytest {testDirs}",
+  "testCommand": "uv run pytest",
+  "setupCommand": "uv sync",
+  "patternsScript": "scripts/spec-patterns.sh",
+  "layerGroups": [["data"], ["tui"]],
+  "agentMap": {
+    "tests": "testing",
+    "data": "data-layer",
+    "tui": "tui-layer",
+    "default": "general-purpose"
+  },
+  "routing": {
+    "tests": "tests/test_*.py rows",
+    "data": "src/cctop/data.py rows — dataclasses, JSONL parsing, scan/aggregation, cost math, shorten",
+    "tui": "src/cctop/app.py rows — App/Screen widgets, bindings, actions, cell/number rendering"
+  },
+  "pipelineRules": ".claude/rules/spec-pipeline.md"
+}
