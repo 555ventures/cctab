@@ -39,11 +39,30 @@ rejected before Python 3.11, and all real transcripts end in `Z`), then `.astime
 **always sorts after** every real day (use the explicit two-list sort — a bare `reverse=True`
 wrongly floats `"unknown"` to the front).
 
-## client margin (`CCTOP_MARGIN` / `client_cost`)
+## client margin (`client_cost` / per-directory `.cctop`)
 
-`CLIENT $ = cost × CCTOP_MARGIN`, a **markup multiplier**, default `1.0` (client == cost).
+`CLIENT $ = cost × MARGIN`, a **markup multiplier**, default `1.0` (client == cost).
 `MARGIN` lives in `data.py`; `client_cost(cost)` is the single function that applies it — reuse it
 everywhere (per-row cells via `DayUsage.client`, and summary totals), never an inline `× margin`.
+The active margin **is** the module global `data.MARGIN`; `set_margin(value)` mutates it via
+`globals()["MARGIN"] = value` (a `from`-import rebind would not update the attribute) and
+`current_margin()` reads it back.
+
+### Per-directory margin (`.cctop`)
+
+The client markup is **per-directory**, stored in `<launch dir>/.cctop` as JSON `{"margin":
+<number>}` (filename constant `DIR_CONFIG_NAME` in `data.py`; only `margin` is read, extra keys
+ignored). cctop reads it on launch with precedence **`.cctop` → `CCTOP_MARGIN` env → `1.0`**, and
+writes it when the user edits the margin in-app with `e` on the daily view (`escape` cancels —
+an empty Input with the current margin shown as a placeholder hint). The file is created **only
+on edit** (never just by viewing a directory), read **best-effort** (`read_dir_margin` returns
+`None` for a missing, unparseable, non-numeric, bool, string, negative, or non-finite value — so
+it falls back silently and never poisons CLIENT $), and written **atomically** (`write_dir_margin`
+uses a same-dir `tempfile` + `os.replace`, swallows `OSError`, cleans up its temp, returns `False`
+on failure — a read-only dir degrades, never crashes; a failed write surfaces `(could not write
+.cctop)` in the summary label). Model `$/MTok` rates remain global in `data.py`'s `RATES`; only
+the margin is per-directory. Suggest adding `.cctop` to `.gitignore`. This is cctop's only disk
+write — every other surface is read-only.
 
 ## cwd scope (`cwd_in_scope`)
 

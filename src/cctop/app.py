@@ -168,6 +168,8 @@ class DailyScreen(Screen):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle margin submission from #margin-input."""
+        if event.input.id != "margin-input":
+            return
         margin_input = self.query_one("#margin-input", Input)
         margin_input.remove_class("visible")
         self.query_one("#daily-table", DataTable).focus()

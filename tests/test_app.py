@@ -92,16 +92,14 @@ def test_launch_reads_dotcctop_margin(tmp_path: Path, monkeypatch) -> None:
     .cctop takes precedence over CCTOP_MARGIN env — client_cost(10.0) must equal 30.0.
     Restores data.MARGIN via monkeypatch to prevent module-global leakage (A6).
     """
-    # Snapshot the original MARGIN so monkeypatch can restore it after the test.
-    orig_margin = data.MARGIN
-    monkeypatch.setattr(data, "MARGIN", orig_margin)
+    # Simulate the env value already baked into the module at import (data.MARGIN is
+    # read from CCTOP_MARGIN at import time, so a late setenv would NOT affect it — set
+    # the module global directly). monkeypatch restores the true original at teardown (A6).
+    monkeypatch.setattr(data, "MARGIN", 1.3)
 
-    # Write a .cctop file in tmp_path specifying margin 3.0.
+    # Write a .cctop file in tmp_path specifying margin 3.0 — it must win over env 1.3.
     dotcctop = tmp_path / ".cctop"
     dotcctop.write_text(json.dumps({"margin": 3.0}))
-
-    # Simulate CCTOP_MARGIN=1.3 being set in the environment — .cctop must win.
-    monkeypatch.setenv("CCTOP_MARGIN", "1.3")
 
     async def drive() -> None:
         app = CCTop(launch_cwd=str(tmp_path))
