@@ -114,6 +114,31 @@ def test_launch_reads_dotcctop_margin(tmp_path: Path, monkeypatch) -> None:
     asyncio.run(drive())
 
 
+def test_margin_input_mounted_lazily(tmp_path: Path) -> None:
+    """AC-CFG-6: the margin Input is absent at boot and mounted only on e.
+
+    Regression for the real-driver boot crash: an Input present at compose time fires
+    its selection watcher during _post_mount and calls App.clear_selection() before the
+    MODES auto-mount pushes the screen (ScreenStackError). Mounting it lazily avoids that.
+    """
+
+    async def drive() -> None:
+        app = CCTop(launch_cwd=str(tmp_path))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            # No margin Input on the screen until the user asks for it.
+            assert not app.screen.query("#margin-input")
+            await pilot.press("e")
+            await pilot.pause()
+            assert app.screen.query("#margin-input")
+            # escape removes it again.
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not app.screen.query("#margin-input")
+
+    asyncio.run(drive())
+
+
 def test_edit_margin_sets_and_writes(tmp_path: Path, monkeypatch) -> None:
     """AC-CFG-6: pressing e, typing 2.5, and submitting sets active margin to 2.5 and writes .cctop.
 

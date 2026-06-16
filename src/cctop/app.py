@@ -144,8 +144,7 @@ class DailyScreen(Screen):
     CSS = """
     #summary { dock: top; height: 1; padding: 0 1; background: $boost; }
     DataTable { height: 1fr; }
-    #margin-input { dock: bottom; height: 3; display: none; }
-    #margin-input.visible { display: block; }
+    #margin-input { dock: bottom; height: 3; }
     """
 
     def __init__(self) -> None:
@@ -158,7 +157,11 @@ class DailyScreen(Screen):
         table: DataTable = DataTable(zebra_stripes=True, id="daily-table")
         table.cursor_type = "row"
         yield table
-        yield Input(id="margin-input", placeholder="")
+        # The margin Input is mounted lazily in action_edit_margin — mounting it at
+        # compose time crashes the real driver: Input._watch_selection fires during
+        # _post_mount and calls App.clear_selection(), which queries self.screen
+        # before the MODES auto-mount has pushed this screen onto the stack
+        # (ScreenStackError, uncaught — Textual only guards NoScreen there).
         yield Footer()
 
     def on_mount(self) -> None:
@@ -218,27 +221,33 @@ class DailyScreen(Screen):
         """Re-render when this screen becomes active."""
         self.refresh_daily()
 
-    def action_edit_margin(self) -> None:
-        """Reveal the margin input and focus it (e binding)."""
-        margin_input = self.query_one("#margin-input", Input)
-        margin_input.placeholder = str(current_margin())
-        margin_input.value = ""
-        margin_input.add_class("visible")
+    async def action_edit_margin(self) -> None:
+        """Mount the margin input and focus it (e binding).
+
+        Mounted lazily (not in compose) so the selection watcher fires only after
+        this screen is on the stack — see compose() for the boot-time crash this avoids.
+        """
+        if self.query("#margin-input"):
+            return
+        margin_input = Input(id="margin-input", placeholder=str(current_margin()))
+        await self.mount(margin_input)
         margin_input.focus()
 
-    def action_cancel_margin(self) -> None:
-        """Hide the margin input without making changes (escape binding)."""
-        margin_input = self.query_one("#margin-input", Input)
-        margin_input.remove_class("visible")
+    def _close_margin_input(self) -> None:
+        """Remove the margin input (if mounted) and return focus to the table."""
+        for margin_input in self.query("#margin-input"):
+            margin_input.remove()
         self.query_one("#daily-table", DataTable).focus()
+
+    def action_cancel_margin(self) -> None:
+        """Discard the margin input without making changes (escape binding)."""
+        self._close_margin_input()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle margin submission from #margin-input."""
         if event.input.id != "margin-input":
             return
-        margin_input = self.query_one("#margin-input", Input)
-        margin_input.remove_class("visible")
-        self.query_one("#daily-table", DataTable).focus()
+        self._close_margin_input()
 
         raw = event.value.strip()
         if not raw:
