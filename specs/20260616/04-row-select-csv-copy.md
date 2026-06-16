@@ -1,6 +1,6 @@
 ---
 date: 2026-06-16
-status: hardened
+status: done
 risk: T2
 area: tui
 design: false

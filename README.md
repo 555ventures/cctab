@@ -47,7 +47,17 @@ cctop
 | `r`      | rescan                              |
 | `e`      | edit client margin (daily view)     |
 | `escape` | cancel margin edit (daily view)     |
+| `space`  | mark / unmark the current day       |
+| `y`      | copy marked days (or all) as CSV    |
 | `q`      | quit                                |
+
+## Copy for billing
+
+Press `space` to mark the days you want to bill (a `●` marker appears); press `y` to copy
+them to the system clipboard as CSV. With nothing marked, `y` copies the whole visible table.
+The CSV has a header, one row per day with raw per-family token and dollar columns plus
+`est_usd` / `client_usd`, and a `TOTAL` row — formatted for direct paste into a spreadsheet
+(no `$`, no abbreviated numbers), so every column is `SUM()`-able.
 
 ## Cost & rates
 

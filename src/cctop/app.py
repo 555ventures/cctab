@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import math
 import os
 
@@ -72,6 +74,58 @@ def model_cell(usage: object | None, family: str) -> Text:
     return Text(s, style="grey70", justify="right")
 
 
+def daily_csv(days: list[DayUsage]) -> str:
+    """Serialize day rows as billing CSV (D4/D5/D6).
+
+    Columns: day, then <fam>_tokens/<fam>_cost per FAMILIES, then est_usd/client_usd;
+    a trailing TOTAL row sums each numeric column. Numbers are raw — tokens as integers,
+    dollars as 2-decimal floats (no `$`, no abbreviation) — for direct spreadsheet paste.
+    Per-family cost via data.cost_of (no rate literal here); a family absent from a day's
+    by_model contributes 0 tokens / 0.00 cost (never cost_of(None, …), which would raise).
+    """
+    header = ["day"]
+    for fam in FAMILIES:
+        header.append(f"{fam}_tokens")
+        header.append(f"{fam}_cost")
+    header.append("est_usd")
+    header.append("client_usd")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(header)
+
+    fam_tok_totals = {fam: 0 for fam in FAMILIES}
+    fam_cost_totals = {fam: 0.0 for fam in FAMILIES}
+    est_total = 0.0
+    client_total = 0.0
+
+    for d in days:
+        row: list[object] = [d.day]
+        for fam in FAMILIES:
+            u = d.by_model.get(fam)
+            toks = u.total if u else 0
+            cost = cost_of(u, fam) if u else 0.0
+            row.append(toks)
+            row.append(f"{cost:.2f}")
+            fam_tok_totals[fam] += toks
+            fam_cost_totals[fam] += cost
+        row.append(f"{d.cost:.2f}")
+        row.append(f"{d.client:.2f}")
+        est_total += d.cost
+        client_total += d.client
+        writer.writerow(row)
+
+    total_row: list[object] = ["TOTAL"]
+    for fam in FAMILIES:
+        total_row.append(fam_tok_totals[fam])
+        total_row.append(f"{fam_cost_totals[fam]:.2f}")
+    total_row.append(f"{est_total:.2f}")
+    total_row.append(f"{client_total:.2f}")
+    writer.writerow(total_row)
+
+    return buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # DailyScreen — one row per day, one column per model family
 # ---------------------------------------------------------------------------
@@ -83,6 +137,8 @@ class DailyScreen(Screen):
     BINDINGS = [
         Binding("e", "edit_margin", "Edit margin"),
         Binding("escape", "cancel_margin", "Cancel", show=False),
+        Binding("space", "toggle_select", "Mark"),
+        Binding("y", "copy_csv", "Copy CSV"),
     ]
 
     CSS = """
@@ -91,6 +147,11 @@ class DailyScreen(Screen):
     #margin-input { dock: bottom; height: 3; display: none; }
     #margin-input.visible { display: block; }
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Day keys (d.day) marked for the CSV billing export (D1).
+        self.selected: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Static("scanning…", id="summary")
@@ -102,6 +163,7 @@ class DailyScreen(Screen):
 
     def on_mount(self) -> None:
         table = self.query_one("#daily-table", DataTable)
+        table.add_column("", key="mark", width=2)
         table.add_column("DAY", key="day", width=12)
         for fam in FAMILIES:
             table.add_column(Text(fam.upper(), justify="right"), key=fam, width=18)
@@ -115,18 +177,22 @@ class DailyScreen(Screen):
         table = self.query_one("#daily-table", DataTable)
         table.clear()
 
+        # Drop any marked days that vanished after a rescan (D7).
+        self.selected &= {d.day for d in days}
+
         agg_cost = 0.0
         agg_tokens = 0
         for d in days:
             agg_cost += d.cost
             agg_tokens += d.total
-            cells: list[Text | str] = [d.day]
+            marker = Text("●", style="bold green") if d.day in self.selected else Text("")
+            cells: list[Text | str] = [marker, d.day]
             for fam in FAMILIES:
                 usage = d.by_model.get(fam)
                 cells.append(model_cell(usage, fam))
             cells.append(cost_cell(d.cost))
             cells.append(cost_cell(d.client))
-            table.add_row(*cells)
+            table.add_row(*cells, key=d.day)
 
         scope_cwd = app.scope_cwd
         scope_label = f"cwd: {shorten(scope_cwd)}"
@@ -195,6 +261,31 @@ class DailyScreen(Screen):
         else:
             app._write_failed = False
         self.refresh_daily()
+
+    def action_toggle_select(self) -> None:
+        """Toggle the cursor row's day in/out of the marked set (space binding)."""
+        app: CCTop = self.app  # type: ignore[assignment]
+        table = self.query_one("#daily-table", DataTable)
+        i = table.cursor_row
+        if not (0 <= i < len(app.days)):
+            return
+        day = app.days[i].day
+        if day in self.selected:
+            self.selected.discard(day)
+        else:
+            self.selected.add(day)
+        self.refresh_daily()
+
+    def action_copy_csv(self) -> None:
+        """Copy marked days (or all visible) to the clipboard as CSV (y binding)."""
+        app: CCTop = self.app  # type: ignore[assignment]
+        if self.selected:
+            rows = [d for d in app.days if d.day in self.selected]
+        else:
+            rows = list(app.days)
+        text = daily_csv(rows)
+        self.app.copy_to_clipboard(text)
+        self.app.notify(f"copied {len(rows)} day(s) to clipboard (CSV)", timeout=3)
 
 
 # ---------------------------------------------------------------------------

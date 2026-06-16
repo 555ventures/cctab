@@ -84,3 +84,20 @@ via the `CCTop(launch_cwd=…)` param for tests) and never re-read on rescans. A
 scan pass calls `scan_daily(cwd=self._launch_cwd)` and re-renders `DailyScreen` via `_on_loaded`.
 `DailyScreen` is day-rows × family-columns with `$cost(tokens)` cells (via `model_cell`) and
 `EST $`/`CLIENT $` totals.
+
+## Billing export (`space` / `y`, `daily_csv`)
+
+The daily view supports a hand-rolled multi-select (Textual `DataTable` has no native multi-row
+selection). `DailyScreen.selected` is a `set[str]` of day keys initialized in `__init__`; rows
+are added keyed by `d.day` with a leftmost 2-wide `mark` column showing `●` for marked days.
+`space` (`action_toggle_select`) toggles the cursor row's day (`app.days[table.cursor_row].day`);
+`refresh_daily` prunes `selected` to present days first, so a day gone after a rescan never rides
+into a bill. `y` (`action_copy_csv`) copies the marked days — or the whole visible table when none
+are marked — to the system clipboard via `App.copy_to_clipboard`, confirmed with a transient
+`App.notify` toast (never clobbering the summary). Serialization is the pure module-level
+`daily_csv(days) -> str` in `app.py` (stdlib `csv`): a header, one raw row per day
+(`day`, per-`FAMILIES` `<fam>_tokens`/`<fam>_cost`, `est_usd`, `client_usd`), and a `TOTAL` row —
+tokens as integers, dollars as 2-decimal floats, no `$` or `human()` abbreviation, so every
+column is spreadsheet-`SUM()`-able. A family absent from a day contributes `0`/`0.00` (never
+`cost_of(None, …)`, which would raise); per-family dollars route through `data.cost_of` (no rate
+literal in `app.py`).
